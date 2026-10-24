@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+  <title>NMR practice game</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script src="config.js" defer></script>
+  <script src="items.js" defer></script>
+  <script src="leaderboard.js" defer></script>
+  <script src="game.js" defer></script>
+</head>
+<body>
+  <noscript>
+    <div class="card">
+      <h1>NMR practice game</h1>
+      <p class="lead">This game needs JavaScript. Please turn it on, or open the link in another browser.</p>
+    </div>
+  </noscript>
+
+  <main id="app">
+    <section id="screen-start" class="screen" hidden>
+      <div class="card start">
+        <p id="demo-banner" class="banner" hidden>Test version: the leaderboard shows demo players until the pilot results are loaded.</p>
+        <h1>NMR practice game</h1>
+        <p id="round-line" class="lead"></p>
+        <ul id="rules" class="rules"></ul>
+        <button id="btn-start" class="btn primary big" type="button">Start</button>
+      </div>
+    </section>
+
+    <section id="screen-play" class="screen" hidden>
+      <header class="topbar">
+        <div id="lb-strip" class="lb-strip" hidden></div>
+        <div class="topline">
+          <p id="where" class="where"></p>
+          <p class="stats"><span id="score">Score 0</span><span id="clock" class="clock" aria-label="Time">0:00</span></p>
+        </div>
+        <div class="progress" aria-hidden="true"><div id="progress-bar" class="bar"></div></div>
+      </header>
+      <div id="layout" class="layout">
+        <div class="qcol">
+          <figure class="spectrum">
+            <button id="btn-zoom" class="zoom-btn" type="button" title="Enlarge spectrum">
+              <img id="spectrum-img" alt="" width="1408" height="946">
+            </button>
+            <figcaption id="caption"></figcaption>
+          </figure>
+          <h2 id="question" class="question"></h2>
+          <div id="answers" class="answers" role="group" aria-labelledby="question"></div>
+          <div id="feedback" class="feedback" hidden>
+            <p id="verdict" class="verdict" aria-live="polite"></p>
+            <p id="explanation" class="explanation"></p>
+            <div id="lb-inline" class="lb-inline"></div>
+            <button id="btn-next" class="btn primary" type="button">Next question</button>
+          </div>
+        </div>
+        <aside id="lb-panel" class="lb-panel" hidden aria-label="Leaderboard"></aside>
+      </div>
+    </section>
+
+    <section id="screen-result" class="screen" hidden>
+      <div class="card result">
+        <h1 id="result-title">Round complete</h1>
+        <p class="big-score"><span id="result-score">0</span><span id="result-max" class="max"> / 100</span></p>
+        <p id="result-line" class="lead"></p>
+        <p id="result-rank" class="lead rank" hidden></p>
+        <div id="code-block">
+          <p class="label">Your code</p>
+          <p class="codebox"><code id="code"></code></p>
+          <p class="copyline">
+            <button id="btn-copy" class="btn primary" type="button">Copy code</button>
+            <span id="copy-status" class="copy-status" aria-live="polite"></span>
+          </p>
+          <ol class="steps">
+            <li>Copy the code.</li>
+            <li>Paste it into the questionnaire tab.</li>
+            <li>Close this tab without playing again.</li>
+          </ol>
+        </div>
+        <div id="practice-block" hidden>
+          <button id="btn-again" class="btn primary" type="button">Play again</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-broken" class="screen" hidden>
+      <div class="card">
+        <h1>This link is incomplete</h1>
+        <p class="lead">Please go back to the questionnaire and open the game from the link there.</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="zoom" class="zoom" hidden role="dialog" aria-modal="true" aria-label="Enlarged spectrum">
+    <button id="btn-zoom-close" class="btn close" type="button">Close</button>
+    <img id="zoom-img" alt="">
+    <p class="zoom-hint">Pinch to zoom, or turn your phone sideways.</p>
+  </div>
+</body>
+</html>

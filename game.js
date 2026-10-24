@@ -1,6 +1,7 @@
 /* NMR practice game: screens, timing, leaderboard and the end-of-round code.
-   Plain JavaScript with no libraries. Nothing is stored in the browser and nothing is
-   sent anywhere: the only output is the code the player copies by hand. */
+   Plain JavaScript with no libraries. Nothing is stored in the browser. The player copies
+   the code by hand; if config.js names a results sheet, each finished round is also sent
+   there as one anonymous record (the same data as the code, plus a random round ID). */
 (function () {
   "use strict";
 
@@ -34,6 +35,13 @@
   var params = new URLSearchParams(window.location.search);
   var mode = (params.get("mode") || "").trim().toUpperCase();
   var set = (params.get("set") || "").trim().toUpperCase();
+  // Optional, passed on to the results sheet: the questionnaire's response ID and a source label.
+  function linkId(name, max) {
+    var v = (params.get(name) || "").trim();
+    return new RegExp("^[A-Za-z0-9_-]{1," + max + "}$").test(v) ? v : "";
+  }
+  var pid = linkId("pid", 64);
+  var src = linkId("src", 32);
 
   function pickQuestions() {
     var sets = CONFIG.sets || {};
@@ -103,6 +111,7 @@
   function begin() {
     state = freshState();
     state.guard = timed;
+    state.layout = window.matchMedia("(max-width: 899px)").matches ? "phone" : "laptop";
     $("layout").classList.toggle("with-board", mode === "L");
     $("lb-panel").hidden = mode !== "L";
     $("lb-strip").hidden = mode !== "L";
@@ -331,15 +340,43 @@
     $("copy-status").textContent = "";
     if (timed) {
       $("result-title").textContent = "Round complete";
-      $("code").textContent = makeCode();
+      var code = makeCode(), rank = null, players = null;
+      $("code").textContent = code;
       if (mode === "L") {
         var rows = standings(n), me = rows.filter(function (r) { return r.you; })[0];
-        $("result-rank").textContent = "You finished " + ordinal(me.rank) + " of " + rows.length + " on the leaderboard.";
+        rank = me.rank;
+        players = rows.length;
+        $("result-rank").textContent = "You finished " + ordinal(rank) + " of " + players + " on the leaderboard.";
       }
+      sendResults(code, rank, players);
     } else {
       $("result-title").textContent = "Practice complete";
     }
     show("result");
+  }
+
+  /* ---------- Results sheet: one anonymous record per finished round (off while resultsUrl is empty) ---------- */
+  function roundId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+  }
+
+  function sendResults(code, rank, players) {
+    var url = CONFIG.resultsUrl || "";
+    if (!/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(url)) return;
+    var record = {
+      v: 1, roundId: roundId(), pid: pid, src: src, set: set, mode: mode, code: code,
+      correct: state.correct, seconds: state.seconds,
+      items: questions.map(function (q) { return q.id; }),
+      rank: rank, players: players, layout: state.layout
+    };
+    try {
+      // A simple text POST needs no permission check from the browser; the reply cannot be read,
+      // and the code on screen stays the backup if the request fails.
+      fetch(url, { method: "POST", mode: "no-cors", keepalive: true,
+                   headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(record) })
+        .catch(function () { /* the code is still there to paste */ });
+    } catch (e) { /* very old browser: the code is still there to paste */ }
   }
 
   function copied() {

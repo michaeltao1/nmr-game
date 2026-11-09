@@ -69,7 +69,18 @@
         <p class="big-score"><span id="result-score">0</span><span id="result-max" class="max"> / 100</span></p>
         <p id="result-line" class="lead"></p>
         <p id="result-rank" class="lead rank" hidden></p>
+        <div id="save-block" class="save-block" hidden>
+          <p id="save-status" class="save-status" aria-live="polite">Saving your results…</p>
+          <div id="saved-steps" hidden>
+            <ol class="steps">
+              <li>Go back to the questionnaire tab. There's nothing to copy.</li>
+              <li>Close this tab without playing again.</li>
+            </ol>
+            <button id="btn-show-code" class="btn link" type="button">Questionnaire asking for a code? Show it</button>
+          </div>
+        </div>
         <div id="code-block">
+          <p id="code-note" class="code-note" hidden>Your results couldn't be saved automatically, so please paste this code into the questionnaire.</p>
           <p class="label">Your code</p>
           <p class="codebox"><code id="code"></code></p>
           <p class="copyline">
@@ -78,7 +89,7 @@
           </p>
           <ol class="steps">
             <li>Copy the code.</li>
-            <li>Paste it into the questionnaire tab.</li>
+            <li>Paste it into the questionnaire tab straight away.</li>
             <li>Close this tab without playing again.</li>
           </ol>
         </div>

@@ -1,7 +1,10 @@
 /* NMR practice game: screens, timing, leaderboard and the end-of-round code.
-   Plain JavaScript with no libraries. Nothing is stored in the browser. The player copies
-   the code by hand; if config.js names a results sheet, each finished round is also sent
-   there as one anonymous record (the same data as the code, plus a random round ID). */
+   Plain JavaScript with no libraries. Nothing is stored in the browser.
+   Without a results sheet, the player copies the code into the questionnaire by hand.
+   If config.js names a results sheet, each finished round is also sent there as one anonymous
+   record (the same data as the code, plus a random round ID). When the link also carries the
+   questionnaire's response ID (pid), that ID already matches the round to the questionnaire,
+   so the end screen just says the results are saved and shows the code only if saving fails. */
 (function () {
   "use strict";
 
@@ -42,6 +45,12 @@
   }
   var pid = linkId("pid", 64);
   var src = linkId("src", 32);
+
+  // A results sheet plus a response ID in the link means the player has nothing to copy.
+  var SHEET = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
+  var sheetUrl = SHEET.test(CONFIG.resultsUrl || "") ? CONFIG.resultsUrl : "";
+  var autoSave = !!sheetUrl && !!pid;
+  var SAVE_WAIT_MS = 12000;   // show the code anyway if the sheet has not answered by then
 
   function pickQuestions() {
     var sets = CONFIG.sets || {};
@@ -93,7 +102,9 @@
       "10 points per correct answer; the time on each question is recorded.",
       "An explanation appears after each answer.",
       "Tap a spectrum to enlarge it.",
-      "Play alone, without notes, and do not refresh or close the tab until you have your code."
+      autoSave
+        ? "Play alone, without notes, and keep this tab open until the end screen says your results are saved."
+        : "Play alone, without notes, and do not refresh or close the tab until you have your code."
     ] : [
       n + " questions: " + (NUMBERS[spectra] || spectra) + " spectra, five steps each, one attempt per question.",
       "10 points per correct answer.",
@@ -336,6 +347,8 @@
     $("result-line").textContent = sum(state.correct) + " of " + n + " correct in " + mmss(sum(state.seconds));
     $("result-rank").hidden = mode !== "L";
     $("code-block").hidden = !timed;
+    $("code-note").hidden = true;
+    $("save-block").hidden = true;
     $("practice-block").hidden = timed;
     $("copy-status").textContent = "";
     if (timed) {
@@ -348,6 +361,7 @@
         players = rows.length;
         $("result-rank").textContent = "You finished " + ordinal(rank) + " of " + players + " on the leaderboard.";
       }
+      if (autoSave) setSave("saving");
       sendResults(code, rank, players);
     } else {
       $("result-title").textContent = "Practice complete";
@@ -362,21 +376,52 @@
   }
 
   function sendResults(code, rank, players) {
-    var url = CONFIG.resultsUrl || "";
-    if (!/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(url)) return;
+    if (!sheetUrl) return;
     var record = {
       v: 1, roundId: roundId(), pid: pid, src: src, set: set, mode: mode, code: code,
       correct: state.correct, seconds: state.seconds,
       items: questions.map(function (q) { return q.id; }),
       rank: rank, players: players, layout: state.layout
     };
+    // A simple text POST needs no permission check from the browser.
+    var request = { method: "POST", keepalive: true,
+                    headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(record) };
+    if (!autoSave) {
+      // Without a response ID the pasted code is what links the round to the questionnaire,
+      // so the reply is not needed.
+      request.mode = "no-cors";
+      try { fetch(sheetUrl, request).catch(function () { /* the code is still there to paste */ }); }
+      catch (e) { /* very old browser: the code is still there to paste */ }
+      return;
+    }
+    // The sheet replies "ok" once the round is written. Any other reply, or none in time,
+    // shows the code so the round can still reach the questionnaire.
+    var timer = setTimeout(function () { if (state.save === "saving") setSave("failed"); }, SAVE_WAIT_MS);
+    function done(ok) {
+      clearTimeout(timer);
+      if (ok) setSave("saved");
+      else if (state.save === "saving") setSave("failed");
+    }
     try {
-      // A simple text POST needs no permission check from the browser; the reply cannot be read,
-      // and the code on screen stays the backup if the request fails.
-      fetch(url, { method: "POST", mode: "no-cors", keepalive: true,
-                   headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(record) })
-        .catch(function () { /* the code is still there to paste */ });
-    } catch (e) { /* very old browser: the code is still there to paste */ }
+      fetch(sheetUrl, request)
+        .then(function (res) { return res.text(); })
+        .then(function (text) { done(String(text).trim() === "ok"); }, function () { done(false); });
+    } catch (e) { done(false); }
+  }
+
+  /* With autoSave the end screen waits for the sheet: "saving", then "saved" (nothing to copy)
+     or "failed" (the code is shown, as when there is no sheet). A late "saved" still wins. */
+  function setSave(status) {
+    var saved = status === "saved";
+    state.save = status;
+    $("save-block").hidden = status === "failed";
+    $("save-status").textContent = saved ? "✓ Your results are saved" : "Saving your results…";
+    $("save-status").classList.toggle("good", saved);
+    $("saved-steps").hidden = !saved;
+    if (status === "saving") $("code-block").hidden = true;
+    if (status === "failed") { $("code-block").hidden = false; $("code-note").hidden = false; }
+    if (saved) { $("code-note").hidden = true; state.guard = false; }
+    $("btn-show-code").hidden = !$("code-block").hidden;
   }
 
   function copied() {
@@ -431,6 +476,10 @@
       } else {
         copyByHand(text);
       }
+    });
+    $("btn-show-code").addEventListener("click", function () {
+      $("code-block").hidden = false;
+      $("btn-show-code").hidden = true;
     });
     document.addEventListener("copy", function () {
       if (!$("screen-result").hidden) state.guard = false;   // copied by hand

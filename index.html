@@ -71,27 +71,18 @@
         <p id="result-rank" class="lead rank" hidden></p>
         <div id="save-block" class="save-block" hidden>
           <p id="save-status" class="save-status" aria-live="polite">Saving your results…</p>
+          <p id="save-slow" class="save-help" hidden>This is taking a little longer than usual. Please keep this tab open.</p>
           <div id="saved-steps" hidden>
             <ol class="steps">
-              <li>Go back to the questionnaire tab. There's nothing to copy.</li>
+              <li>Go back to the questionnaire tab.</li>
               <li>Close this tab without playing again.</li>
             </ol>
-            <button id="btn-show-code" class="btn link" type="button">Questionnaire asking for a code? Show it</button>
           </div>
-        </div>
-        <div id="code-block">
-          <p id="code-note" class="code-note" hidden>Your results couldn't be saved automatically, so please paste this code into the questionnaire.</p>
-          <p class="label">Your code</p>
-          <p class="codebox"><code id="code"></code></p>
-          <p class="copyline">
-            <button id="btn-copy" class="btn primary" type="button">Copy code</button>
-            <span id="copy-status" class="copy-status" aria-live="polite"></span>
-          </p>
-          <ol class="steps">
-            <li>Copy the code.</li>
-            <li>Paste it into the questionnaire tab straight away.</li>
-            <li>Close this tab without playing again.</li>
-          </ol>
+          <div id="save-failed" class="save-note" hidden>
+            <p>Check your internet connection, then tap Try again. Please keep this tab open until it says your results are saved.</p>
+            <button id="btn-retry" class="btn primary" type="button">Try again</button>
+          </div>
+          <p id="save-off" class="save-note" hidden>This round couldn't be recorded because the game isn't connected to its results sheet. Please let the researcher know.</p>
         </div>
         <div id="practice-block" hidden>
           <button id="btn-again" class="btn primary" type="button">Play again</button>

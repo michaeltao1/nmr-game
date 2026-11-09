@@ -1,10 +1,9 @@
-/* NMR practice game: screens, timing, leaderboard and the end-of-round code.
-   Plain JavaScript with no libraries. Nothing is stored in the browser.
-   Without a results sheet, the player copies the code into the questionnaire by hand.
-   If config.js names a results sheet, each finished round is also sent there as one anonymous
-   record (the same data as the code, plus a random round ID). When the link also carries the
-   questionnaire's response ID (pid), that ID already matches the round to the questionnaire,
-   so the end screen just says the results are saved and shows the code only if saving fails. */
+/* NMR practice game: screens, timing, leaderboard and saving each round to the results sheet.
+   Plain JavaScript with no libraries. Nothing is stored in the browser and players copy nothing:
+   each finished leaderboard or solo round is sent to the Google Sheet named in config.js as one
+   anonymous record (right or wrong and seconds per question, plus a random round ID and the
+   questionnaire's response ID from the link). The game resends until the sheet replies "ok",
+   and the sheet keeps a resent round only once. Practice rounds are never sent. */
 (function () {
   "use strict";
 
@@ -46,11 +45,11 @@
   var pid = linkId("pid", 64);
   var src = linkId("src", 32);
 
-  // A results sheet plus a response ID in the link means the player has nothing to copy.
+  // Where finished rounds go: the Google Apps Script web app behind the results sheet.
   var SHEET = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
   var sheetUrl = SHEET.test(CONFIG.resultsUrl || "") ? CONFIG.resultsUrl : "";
-  var autoSave = !!sheetUrl && !!pid;
-  var SAVE_WAIT_MS = 12000;   // show the code anyway if the sheet has not answered by then
+  var SAVE_TIMEOUT_MS = 15000;                // a try with no reply by then counts as failed
+  var RETRY_DELAYS_MS = [2000, 5000, 10000];  // waits before the second, third and fourth tries
 
   function pickQuestions() {
     var sets = CONFIG.sets || {};
@@ -96,15 +95,13 @@
     var n = questions.length, spectra = n / 5;
     $("round-line").textContent = mode === "L" ? "This round has a leaderboard."
       : mode === "S" ? "This round has no leaderboard."
-      : "Practice mode: no leaderboard and no code.";
+      : "Practice mode: no leaderboard, and nothing is recorded.";
     var rules = timed ? [
       "10 questions: two spectra, five steps each, one attempt per question.",
       "10 points per correct answer; the time on each question is recorded.",
       "An explanation appears after each answer.",
       "Tap a spectrum to enlarge it.",
-      autoSave
-        ? "Play alone, without notes, and keep this tab open until the end screen says your results are saved."
-        : "Play alone, without notes, and do not refresh or close the tab until you have your code."
+      "Play alone, without notes, and keep this tab open until the end screen says your results are saved."
     ] : [
       n + " questions: " + (NUMBERS[spectra] || spectra) + " spectra, five steps each, one attempt per question.",
       "10 points per correct answer.",
@@ -325,7 +322,7 @@
     }
   }
 
-  /* ---------- Result and code ---------- */
+  /* ---------- Result ---------- */
   function checkChars(text) {
     // Each character code times its position, summed, mod 1296, as two base-36 digits.
     var total = 0;
@@ -334,6 +331,8 @@
     return DIGITS36.charAt(Math.floor(v / 36)) + DIGITS36.charAt(v % 36);
   }
 
+  // A compact check string sent with each record (players never see it): the sheet rebuilds it
+  // from the answers and times and refuses a record that does not match.
   function makeCode() {
     var body = set + mode + "-" + state.correct.join("") + "-" +
       state.seconds.map(function (s) { return ("0" + s).slice(-2); }).join("");
@@ -346,23 +345,18 @@
     $("result-max").textContent = " / " + n * POINTS;
     $("result-line").textContent = sum(state.correct) + " of " + n + " correct in " + mmss(sum(state.seconds));
     $("result-rank").hidden = mode !== "L";
-    $("code-block").hidden = !timed;
-    $("code-note").hidden = true;
-    $("save-block").hidden = true;
+    $("save-block").hidden = !timed;
     $("practice-block").hidden = timed;
-    $("copy-status").textContent = "";
     if (timed) {
       $("result-title").textContent = "Round complete";
-      var code = makeCode(), rank = null, players = null;
-      $("code").textContent = code;
+      var rank = null, players = null;
       if (mode === "L") {
         var rows = standings(n), me = rows.filter(function (r) { return r.you; })[0];
         rank = me.rank;
         players = rows.length;
         $("result-rank").textContent = "You finished " + ordinal(rank) + " of " + players + " on the leaderboard.";
       }
-      if (autoSave) setSave("saving");
-      sendResults(code, rank, players);
+      sendResults(rank, players);
     } else {
       $("result-title").textContent = "Practice complete";
     }
@@ -375,70 +369,64 @@
     return "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
   }
 
-  function sendResults(code, rank, players) {
-    if (!sheetUrl) return;
-    var record = {
-      v: 1, roundId: roundId(), pid: pid, src: src, set: set, mode: mode, code: code,
+  function sendResults(rank, players) {
+    if (!sheetUrl) { setSave("off"); return; }
+    state.record = JSON.stringify({
+      v: 1, roundId: roundId(), pid: pid, src: src, set: set, mode: mode, code: makeCode(),
       correct: state.correct, seconds: state.seconds,
       items: questions.map(function (q) { return q.id; }),
       rank: rank, players: players, layout: state.layout
-    };
-    // A simple text POST needs no permission check from the browser.
-    var request = { method: "POST", keepalive: true,
-                    headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(record) };
-    if (!autoSave) {
-      // Without a response ID the pasted code is what links the round to the questionnaire,
-      // so the reply is not needed.
-      request.mode = "no-cors";
-      try { fetch(sheetUrl, request).catch(function () { /* the code is still there to paste */ }); }
-      catch (e) { /* very old browser: the code is still there to paste */ }
-      return;
+    });
+    startSaving();
+  }
+
+  // Up to four tries, a few seconds apart; then a Try again button starts another four.
+  function startSaving() {
+    state.tries = 0;
+    setSave("saving");
+    tryToSave();
+  }
+
+  function tryToSave() {
+    if (state.save === "saved") return;
+    var n = state.tries++, moved = false;
+    if (n > 0) $("save-slow").hidden = false;
+    function next() {             // this try failed, or has had no reply for too long
+      if (moved) return;
+      moved = true;
+      clearTimeout(timeout);
+      if (state.save === "saved") return;
+      if (n < RETRY_DELAYS_MS.length) state.retry = setTimeout(tryToSave, RETRY_DELAYS_MS[n]);
+      else setSave("failed");
     }
-    // The sheet replies "ok" once the round is written. Any other reply, or none in time,
-    // shows the code so the round can still reach the questionnaire.
-    var timer = setTimeout(function () { if (state.save === "saving") setSave("failed"); }, SAVE_WAIT_MS);
-    function done(ok) {
-      clearTimeout(timer);
-      if (ok) setSave("saved");
-      else if (state.save === "saving") setSave("failed");
-    }
+    var timeout = setTimeout(next, SAVE_TIMEOUT_MS);
     try {
-      fetch(sheetUrl, request)
+      // A simple text POST needs no permission check from the browser, and the sheet's reply can
+      // be read. "ok" means the round is in the sheet, even when it comes from an earlier try.
+      fetch(sheetUrl, { method: "POST", keepalive: true,
+                        headers: { "Content-Type": "text/plain;charset=utf-8" }, body: state.record })
         .then(function (res) { return res.text(); })
-        .then(function (text) { done(String(text).trim() === "ok"); }, function () { done(false); });
-    } catch (e) { done(false); }
+        .then(function (text) {
+          if (String(text).trim() === "ok") { clearTimeout(timeout); clearTimeout(state.retry); setSave("saved"); }
+          else next();
+        }, next);
+    } catch (e) { next(); }
   }
 
-  /* With autoSave the end screen waits for the sheet: "saving", then "saved" (nothing to copy)
-     or "failed" (the code is shown, as when there is no sheet). A late "saved" still wins. */
+  /* End screen states: "saving", "saved" (go back to the questionnaire), "failed" (Try again)
+     and "off" (no results sheet in config.js). */
   function setSave(status) {
-    var saved = status === "saved";
     state.save = status;
-    $("save-block").hidden = status === "failed";
-    $("save-status").textContent = saved ? "✓ Your results are saved" : "Saving your results…";
-    $("save-status").classList.toggle("good", saved);
-    $("saved-steps").hidden = !saved;
-    if (status === "saving") $("code-block").hidden = true;
-    if (status === "failed") { $("code-block").hidden = false; $("code-note").hidden = false; }
-    if (saved) { $("code-note").hidden = true; state.guard = false; }
-    $("btn-show-code").hidden = !$("code-block").hidden;
-  }
-
-  function copied() {
-    $("copy-status").textContent = "Copied ✓";
-    state.guard = false;
-  }
-
-  function copyByHand(text) {
-    var range = document.createRange();
-    range.selectNodeContents($("code"));
-    var sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
-    var ok = false;
-    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
-    if (ok) copied();
-    else $("copy-status").textContent = "Select the code above and copy it by hand.";
+    $("save-status").textContent = {
+      saving: "Saving your results…", saved: "✓ Your results are saved",
+      failed: "Your results haven't been saved yet", off: "Your results haven't been saved"
+    }[status];
+    $("save-status").className = "save-status" + (status === "saved" ? " good" : status === "saving" ? "" : " bad");
+    if (status !== "saving") $("save-slow").hidden = true;
+    $("saved-steps").hidden = status !== "saved";
+    $("save-failed").hidden = status !== "failed";
+    $("save-off").hidden = status !== "off";
+    if (status === "saved" || status === "off") state.guard = false;
   }
 
   /* ---------- Enlarged spectrum ---------- */
@@ -469,20 +457,8 @@
     $("btn-zoom").addEventListener("click", openZoom);
     $("btn-zoom-close").addEventListener("click", closeZoom);
     $("zoom").addEventListener("click", function (ev) { if (ev.target === $("zoom")) closeZoom(); });
-    $("btn-copy").addEventListener("click", function () {
-      var text = $("code").textContent;
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(copied, function () { copyByHand(text); });
-      } else {
-        copyByHand(text);
-      }
-    });
-    $("btn-show-code").addEventListener("click", function () {
-      $("code-block").hidden = false;
-      $("btn-show-code").hidden = true;
-    });
-    document.addEventListener("copy", function () {
-      if (!$("screen-result").hidden) state.guard = false;   // copied by hand
+    $("btn-retry").addEventListener("click", function () {
+      if (state.save === "failed") startSaving();
     });
 
     document.addEventListener("keydown", function (ev) {

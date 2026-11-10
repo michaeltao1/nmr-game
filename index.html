@@ -10,11 +10,11 @@
   <title>NMR practice game</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preload" href="fonts/plex-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="style.css?v=b1d9ac52">
-  <script src="config.js?v=b1d9ac52" defer></script>
-  <script src="items.js?v=b1d9ac52" defer></script>
-  <script src="leaderboard.js?v=b1d9ac52" defer></script>
-  <script src="game.js?v=b1d9ac52" defer></script>
+  <link rel="stylesheet" href="style.css?v=ffb3300f">
+  <script src="config.js?v=ffb3300f" defer></script>
+  <script src="items.js?v=ffb3300f" defer></script>
+  <script src="leaderboard.js?v=ffb3300f" defer></script>
+  <script src="game.js?v=ffb3300f" defer></script>
 </head>
 <body>
   <noscript>
@@ -60,9 +60,26 @@
         </figure>
         <p id="demo-banner" class="banner" hidden>Test version: the leaderboard shows demo players until the pilot results are loaded.</p>
         <h1 class="title">NMR practice game</h1>
-        <p id="round-line" class="round-line"></p>
-        <ul id="rules" class="rules"></ul>
-        <button id="btn-start" class="btn primary big" type="button">Start the round</button>
+        <div id="signup-block" hidden>
+          <p class="lead intro">Two short rounds of NMR questions, one with a leaderboard and one without, then a short questionnaire.</p>
+          <form id="signup" class="signup" novalidate>
+            <label class="field-label" for="name">Choose a game name</label>
+            <input id="name" class="field" type="text" name="game-name" maxlength="24" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="go" aria-describedby="name-hint">
+            <p id="name-hint" class="hint">You'll need it for the questionnaire at the end, so pick one you'll remember. It doesn't have to be your real name, and only the researcher sees it.</p>
+            <label class="consent"><input id="consent" type="checkbox"><span>I agree to take part, and for my game name, answers and times to be used in a BSc research project. Taking part is voluntary.</span></label>
+            <p id="info-line" class="hint info" hidden><a id="info-link" href="#" target="_blank" rel="noopener">Read the information sheet</a></p>
+            <p id="signup-error" class="form-error" role="alert" hidden></p>
+            <button id="btn-signup" class="btn primary big" type="submit">Continue</button>
+          </form>
+        </div>
+        <div id="round-block">
+          <h2 id="round-of" class="round-of" tabindex="-1" hidden></h2>
+          <p id="playing-as" class="playing-as" hidden>Playing as <strong id="playing-name"></strong></p>
+          <p id="round-line" class="round-line"></p>
+          <ul id="rules" class="rules"></ul>
+          <p id="resume-line" class="resume-line" hidden></p>
+          <button id="btn-start" class="btn primary big" type="button">Start the round</button>
+        </div>
       </div>
     </section>
 
@@ -113,10 +130,20 @@
           <p id="save-status" class="save-status" aria-live="polite">Saving your results…</p>
           <p id="save-slow" class="save-help" hidden>This is taking a little longer than usual. Please keep this tab open.</p>
           <div id="saved-steps" hidden>
-            <ol class="steps">
-              <li>Go back to the questionnaire tab.</li>
-              <li>Close this tab without playing again.</li>
-            </ol>
+            <p id="next-close" class="save-help">You can close this tab now.</p>
+            <div id="next-round" class="next" hidden>
+              <p>Round 2 has the same kinds of questions on two different spectra.</p>
+              <button id="btn-round2" class="btn primary big" type="button">Go to round 2</button>
+            </div>
+            <div id="next-form" class="next" hidden>
+              <h2>Last step: a short questionnaire</h2>
+              <p>Your game name, <strong id="form-name"></strong>, is already filled in at the top.</p>
+              <a id="form-link" class="btn primary big" href="#">Open the questionnaire</a>
+            </div>
+            <div id="next-done" class="next" hidden>
+              <h2>That's both rounds done</h2>
+              <p>Thank you for taking part. Your game name is <strong id="done-name"></strong>.</p>
+            </div>
           </div>
           <div id="save-failed" class="save-note" hidden>
             <p>Check your internet connection, then tap Try again. Please keep this tab open until it says your results are saved.</p>
@@ -136,7 +163,7 @@
           <path d="M8 40 H120 l4 -2 l3 3 l4 -1 l3 1 H312"/>
         </svg>
         <h1>This link is incomplete</h1>
-        <p class="lead">Please go back to the questionnaire and open the game from the link there.</p>
+        <p class="lead">Please open the game from the link in the email.</p>
       </div>
     </section>
   </main>

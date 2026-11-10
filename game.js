@@ -1,9 +1,17 @@
 /* NMR practice game: screens, timing, leaderboard and saving each round to the results sheet.
-   Plain JavaScript with no libraries. Nothing is stored in the browser and players copy nothing:
-   each finished leaderboard or solo round is sent to the Google Sheet named in config.js as one
-   anonymous record (right or wrong and seconds per question, plus a random round ID and the
-   questionnaire's response ID from the link). The game resends until the sheet replies "ok",
-   and the sheet keeps a resent round only once. Practice rounds are never sent. */
+   Plain JavaScript with no libraries.
+
+   The study link (no set or mode in it) runs a whole session: the student picks a game name and
+   agrees to take part, the results sheet deals them one of four orders (which set goes with the
+   leaderboard, and which round type comes first), and they play round 1 then round 2. Each
+   finished round goes to the Google Sheet named in config.js with the game name, and the
+   questionnaire (a Google Form) opens at the end with that name already filled in, so the two
+   can be matched. The session is kept in this tab only (sessionStorage), so a refresh carries on
+   where it stopped.
+
+   A link with a set and mode (?set=A&mode=L) plays one round on its own, for testing, and stores
+   nothing; ?mode=P is practice, which is never sent. The game resends a round until the sheet
+   replies "ok", and the sheet keeps a resent round only once. */
 (function () {
   "use strict";
 
@@ -75,23 +83,44 @@
     return n + suffix;
   }
 
-  /* ---------- The link: ?set=A&mode=L, ?set=B&mode=S, ?mode=P (optionally &set=A) ---------- */
+  /* ---------- The link: the study link (no set or mode), ?set=A&mode=L, ?mode=P ---------- */
   var params = new URLSearchParams(window.location.search);
+  var STUDY = !params.has("set") && !params.has("mode");
   var mode = (params.get("mode") || "").trim().toUpperCase();
   var set = (params.get("set") || "").trim().toUpperCase();
-  // Optional, passed on to the results sheet: the questionnaire's response ID and a source label.
+  // Optional, passed on to the results sheet: a participant ID (one-round links only) and a
+  // source label (src=pilot for the pilot, src=test for tries; the study link means main).
   function linkId(name, max) {
     var v = (params.get(name) || "").trim();
     return new RegExp("^[A-Za-z0-9_-]{1," + max + "}$").test(v) ? v : "";
   }
   var pid = linkId("pid", 64);
-  var src = linkId("src", 32);
+  var src = linkId("src", 32) || (STUDY ? "main" : "");
+
+  // The four orders. Each set goes with the leaderboard for half the students, and half of them
+  // play the leaderboard round first, so neither the set nor practice can pass for a leaderboard effect.
+  var ORDERS = {
+    1: [["A", "L"], ["B", "S"]],
+    2: [["B", "L"], ["A", "S"]],
+    3: [["A", "S"], ["B", "L"]],
+    4: [["B", "S"], ["A", "L"]]
+  };
+  // Game names: 2 to 24 characters starting with a letter (the results sheet uses the same rule).
+  var NAME_RULE = /^\p{L}[\p{L}\p{N} '’._-]{1,23}$/u;
+  var SID_RULE = /^[A-Za-z][A-Za-z0-9]{7,31}$/;
+  var SIGNUP_TIMEOUT_MS = 10000;   // no answer from the sheet by then: pick the order here instead
+  var STORE = "nmr-study";
 
   // Where finished rounds go: the Google Apps Script web app behind the results sheet.
   var SHEET = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
   var sheetUrl = SHEET.test(CONFIG.resultsUrl || "") ? CONFIG.resultsUrl : "";
   var SAVE_TIMEOUT_MS = 15000;                // a try with no reply by then counts as failed
   var RETRY_DELAYS_MS = [2000, 5000, 10000];  // waits before the second, third and fourth tries
+
+  // The questionnaire: a Google Form that opens after round 2 with the game name filled in.
+  var FORM = /^https:\/\/docs\.google\.com\/forms\/d\/(e\/)?[A-Za-z0-9_-]+\/viewform$/;
+  var formUrl = FORM.test(CONFIG.formUrl || "") && /^entry\.\d+$/.test(CONFIG.formNameField || "") ? CONFIG.formUrl : "";
+  var infoUrl = /^https:\/\/[^\s"'<>]+$/.test(CONFIG.infoUrl || "") ? CONFIG.infoUrl : "";
 
   function pickQuestions() {
     var sets = CONFIG.sets || {};
@@ -107,10 +136,61 @@
     return qs.every(Boolean) ? qs : null;
   }
 
-  var questions = pickQuestions();
-  var timed = mode === "L" || mode === "S";
-  var testers = (BOARD.sets && BOARD.sets[set]) || [];
+  var questions, timed, testers;
+  function useRound(s, m) {
+    set = s;
+    mode = m;
+    questions = pickQuestions();
+    timed = mode === "L" || mode === "S";
+    testers = (BOARD.sets && BOARD.sets[set]) || [];
+  }
+  useRound(set, mode);
   var NAME_OK = /^[A-Za-z0-9 '_-]{1,12}$/;
+
+  /* ---------- The study session, kept in this tab so a refresh carries on where it stopped ---------- */
+  var study = null;   // { name, sid, src, group, round, progress: { roundId, correct, seconds } }
+
+  function cleanName(v) { return String(v == null ? "" : v).replace(/\s+/g, " ").trim(); }
+
+  function validStudy(s) {
+    if (!s || typeof s !== "object") return false;
+    if (!NAME_RULE.test(s.name || "") || !SID_RULE.test(s.sid || "") || [1, 2, 3, 4].indexOf(s.group) < 0 ||
+        (s.round !== 1 && s.round !== 2) || !/^[A-Za-z0-9_-]{1,32}$/.test(s.src || "")) return false;
+    var p = s.progress;
+    if (p == null) return true;
+    return /^[A-Za-z0-9-]{8,64}$/.test(p.roundId || "") && Array.isArray(p.correct) && Array.isArray(p.seconds) &&
+      p.correct.length === p.seconds.length && p.correct.length <= 10 &&
+      p.correct.every(function (v) { return v === 0 || v === 1; }) &&
+      p.seconds.every(function (v) { return v === Math.floor(v) && v >= 0 && v <= CAP; });
+  }
+
+  function loadStudy() {
+    try {
+      var s = JSON.parse(window.sessionStorage.getItem(STORE) || "null");
+      return validStudy(s) ? s : null;
+    } catch (e) { return null; }
+  }
+
+  function keepStudy() {
+    try { window.sessionStorage.setItem(STORE, JSON.stringify(study)); } catch (e) { /* no storage: a refresh starts again */ }
+  }
+
+  function randomInt(n) {
+    if (window.crypto && crypto.getRandomValues) {
+      var a = new Uint32Array(1);
+      crypto.getRandomValues(a);
+      return a[0] % n;
+    }
+    return Math.floor(Math.random() * n);
+  }
+
+  // A session ID for one sign-up: a letter, then nine letters or digits (no look-alikes).
+  function newSid() {
+    var letters = "ABCDEFGHJKMNPQRSTUVWXYZ", all = letters + "23456789";
+    var s = letters.charAt(randomInt(letters.length));
+    for (var i = 0; i < 9; i++) s += all.charAt(randomInt(all.length));
+    return s;
+  }
 
   /* ---------- Round state ---------- */
   var state;
@@ -132,20 +212,130 @@
     window.scrollTo(0, 0);
   }
 
+  /* ---------- Sign-up (study link): game name and consent, then the sheet deals the order ---------- */
+  function showSignup() {
+    $("signup-block").hidden = false;
+    $("round-block").hidden = true;
+    $("demo-banner").hidden = BOARD.status === "pilot";
+    $("info-line").hidden = !infoUrl;
+    if (infoUrl) $("info-link").href = infoUrl;
+    show("start");
+  }
+
+  function signupError(text, field) {
+    $("signup-error").textContent = text;
+    $("signup-error").hidden = !text;
+    $("name").setAttribute("aria-invalid", field === $("name") ? "true" : "false");
+    if (field) field.focus();
+  }
+
+  var signing = false;
+  function signUp(ev) {
+    ev.preventDefault();
+    if (signing) return;
+    var input = $("name"), name = cleanName(input.value);
+    input.value = name;
+    var nameRule = "Use 2 to 24 characters and start with a letter. Letters, numbers, spaces, hyphens and apostrophes are fine.";
+    if (!name) return signupError("Please choose a game name.", input);
+    if (!NAME_RULE.test(name)) return signupError(nameRule, input);
+    if (!$("consent").checked) return signupError("Please tick the box to agree before you start.", $("consent"));
+    signupError("");
+    signing = true;
+    $("btn-signup").disabled = true;
+    $("btn-signup").textContent = "Setting up your rounds…";
+    var sid = newSid();
+    askForOrder(name, sid, function (reply) {
+      signing = false;
+      $("btn-signup").disabled = false;
+      $("btn-signup").textContent = "Continue";
+      if (reply === "taken") return signupError("Someone has already picked that name. Please choose another one.", input);
+      if (reply === "name") return signupError(nameRule, input);
+      study = { name: name, sid: sid, src: src, group: reply, round: 1, progress: null };
+      keepStudy();
+      enterRound(true);
+    });
+  }
+
+  // The results sheet deals the order, so the four groups stay the same size, and checks that no
+  // one else has the name. If it can't be reached, the game picks one of the four orders at random.
+  function askForOrder(name, sid, done) {
+    var answered = false, timer = null;
+    function reply(r) {
+      if (answered) return;
+      answered = true;
+      clearTimeout(timer);
+      done(r);
+    }
+    function random() { reply(randomInt(4) + 1); }
+    if (!sheetUrl) return random();
+    timer = setTimeout(random, SIGNUP_TIMEOUT_MS);
+    try {
+      fetch(sheetUrl, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+                        body: JSON.stringify({ v: 1, type: "signup", name: name, sid: sid, src: src }) })
+        .then(function (res) { return res.text(); })
+        .then(function (text) {
+          var d = null;
+          try { d = JSON.parse(text); } catch (e) { d = null; }
+          if (d && d.ok === true && [1, 2, 3, 4].indexOf(d.group) >= 0) reply(d.group);
+          else if (d && (d.reason === "taken" || d.reason === "name")) reply(d.reason);
+          else random();
+        }, random);
+    } catch (e) { random(); }
+  }
+
+  // The start screen for the study's current round. A round that was finished but maybe not yet
+  // saved (the tab was refreshed) goes straight to its end screen and is sent again.
+  function enterRound(moveFocus) {
+    var pair = ORDERS[study.group][study.round - 1];
+    useRound(pair[0], pair[1]);
+    var p = study.progress;
+    if (p && p.correct.length === questions.length) {
+      roundState();
+      state.guard = true;
+      finish();
+      return;
+    }
+    setupStart();
+    show("start");
+    if (moveFocus) $("round-of").focus({ preventScroll: true });
+  }
+
+  function toRound2() {
+    if (!STUDY || study.round !== 1 || (state.save !== "saved" && state.save !== "off")) return;
+    study.round = 2;
+    study.progress = null;
+    keepStudy();
+    enterRound(true);
+  }
+
   /* ---------- Start screen ---------- */
   function setupStart() {
     var n = questions.length, spectra = n / 5;
+    var done = STUDY && study.progress ? study.progress.correct.length : 0;
+    $("signup-block").hidden = true;
+    $("round-block").hidden = false;
+    $("round-of").hidden = !STUDY;
+    $("playing-as").hidden = !STUDY;
+    if (STUDY) {
+      $("round-of").textContent = "Round " + study.round + " of 2";
+      $("playing-name").textContent = study.name;
+    }
     $("round-line").textContent = mode === "L" ? "This round has a leaderboard."
       : mode === "S" ? "This round has no leaderboard."
       : "Practice mode: no leaderboard, and nothing is recorded.";
     $("round-line").className = "round-line " + (mode === "L" ? "leaderboard" : mode === "S" ? "solo" : "practice");
-    $("btn-start").textContent = timed ? "Start the round" : "Start practice";
+    $("btn-start").textContent = done ? "Carry on" : STUDY ? "Start round " + study.round
+      : timed ? "Start the round" : "Start practice";
+    $("resume-line").hidden = !done;
+    $("resume-line").textContent = done ? "You've answered " + done + " of " + n +
+      " questions in this round, so you'll carry on from question " + (done + 1) + "." : "";
     var rules = timed ? [
       "10 questions: two spectra, five steps each, one attempt per question.",
       "10 points per correct answer; the time on each question is recorded.",
       "An explanation appears after each answer.",
       "Tap a spectrum to enlarge it.",
-      "Play alone, without notes, and keep this tab open until the end screen says your results are saved."
+      STUDY ? "Play alone, without notes, and keep this tab open until the end."
+        : "Play alone, without notes, and keep this tab open until the end screen says your results are saved."
     ] : [
       n + " questions: " + (NUMBERS[spectra] || spectra) + " spectra, five steps each, one attempt per question.",
       "10 points per correct answer.",
@@ -160,10 +350,27 @@
     questions.forEach(function (q) { var im = new Image(); im.src = q.image; });
   }
 
-  function begin() {
+  // A fresh round. In the study it picks up any answers already given in this round.
+  function roundState() {
     state = freshState();
-    state.guard = timed;
     state.layout = window.matchMedia("(max-width: 899px)").matches ? "phone" : "laptop";
+    if (!STUDY) return;
+    if (!study.progress) study.progress = { roundId: roundId(), correct: [], seconds: [] };
+    var p = study.progress;
+    state.roundId = p.roundId;
+    state.correct = p.correct.slice();
+    state.seconds = p.seconds.slice();
+    state.score = POINTS * sum(state.correct);
+    state.i = state.correct.length;
+    if (mode === "L") {
+      for (var k = 0; k <= state.i; k++) state.ranks[k] = standings(k).filter(function (r) { return r.you; })[0].rank;
+    }
+    keepStudy();
+  }
+
+  function begin() {
+    roundState();
+    state.guard = timed;
     $("layout").classList.toggle("with-board", mode === "L");
     $("lb-panel").hidden = mode !== "L";
     $("lb-strip").hidden = mode !== "L";
@@ -171,7 +378,8 @@
     buildRuler($("ruler"), questions.length);
     lastOrder = null;
     show("play");
-    renderQuestion();
+    if (state.i >= questions.length) finish();
+    else renderQuestion();
   }
 
   /* ---------- The ruler: one slot per question, five per spectrum; answers grow peaks ---------- */
@@ -275,6 +483,11 @@
     state.correct.push(ok ? 1 : 0);
     state.seconds.push(secs);
     if (ok) state.score += POINTS;
+    if (STUDY) {
+      study.progress.correct = state.correct.slice();
+      study.progress.seconds = state.seconds.slice();
+      keepStudy();
+    }
 
     Array.prototype.forEach.call($("answers").children, function (b, j) {
       b.disabled = true;
@@ -459,7 +672,7 @@
       slot.querySelector(".pk").style.animationDelay = (0.3 + i * 0.09).toFixed(2) + "s";
     });
     if (timed) {
-      $("result-title").textContent = "Round complete";
+      $("result-title").textContent = STUDY ? "Round " + study.round + " complete" : "Round complete";
       var rank = null, players = null;
       if (mode === "L") {
         var rows = standings(n), me = rows.filter(function (r) { return r.you; })[0];
@@ -474,7 +687,7 @@
     show("result");
   }
 
-  /* ---------- Results sheet: one anonymous record per finished round (off while resultsUrl is empty) ---------- */
+  /* ---------- Results sheet: one record per finished round (off while resultsUrl is empty) ---------- */
   function roundId() {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
     return "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
@@ -482,12 +695,19 @@
 
   function sendResults(rank, players) {
     if (!sheetUrl) { setSave("off"); return; }
-    state.record = JSON.stringify({
-      v: 1, roundId: roundId(), pid: pid, src: src, set: set, mode: mode, code: makeCode(),
-      correct: state.correct, seconds: state.seconds,
+    var rec = {
+      v: 1, roundId: state.roundId || roundId(), pid: STUDY ? "" : pid, src: STUDY ? study.src : src,
+      set: set, mode: mode, code: makeCode(), correct: state.correct, seconds: state.seconds,
       items: questions.map(function (q) { return q.id; }),
       rank: rank, players: players, layout: state.layout
-    });
+    };
+    if (STUDY) {
+      rec.name = study.name;
+      rec.sid = study.sid;
+      rec.round = study.round;
+      rec.group = study.group;
+    }
+    state.record = JSON.stringify(rec);
     startSaving();
   }
 
@@ -524,8 +744,8 @@
     } catch (e) { next(); }
   }
 
-  /* End screen states: "saving", "saved" (go back to the questionnaire), "failed" (Try again)
-     and "off" (no results sheet in config.js). */
+  /* End screen states: "saving", "saved" (then the next step), "failed" (Try again) and "off"
+     (no results sheet in config.js). */
   function setSave(status) {
     state.save = status;
     $("save-status").textContent = {
@@ -534,10 +754,26 @@
     }[status];
     $("save-status").className = "save-status" + (status === "saved" ? " good" : status === "saving" ? "" : " bad");
     if (status !== "saving") $("save-slow").hidden = true;
-    $("saved-steps").hidden = status !== "saved";
+    var next = status === "saved" || (STUDY && status === "off");
+    $("saved-steps").hidden = !next;
+    if (next) showNext();
     $("save-failed").hidden = status !== "failed";
     $("save-off").hidden = status !== "off";
     if (status === "saved" || status === "off") state.guard = false;
+  }
+
+  // Once a round is saved: close the tab (one-round links), go to round 2, or open the
+  // questionnaire with the game name already filled in.
+  function showNext() {
+    var last = STUDY && study.round === 2;
+    $("next-close").hidden = STUDY;
+    $("next-round").hidden = !(STUDY && study.round === 1);
+    $("next-form").hidden = !(last && formUrl);
+    $("next-done").hidden = !(last && !formUrl);
+    if (!last) return;
+    $("form-name").textContent = study.name;
+    $("done-name").textContent = study.name;
+    if (formUrl) $("form-link").href = formUrl + "?usp=pp_url&" + CONFIG.formNameField + "=" + encodeURIComponent(study.name);
   }
 
   /* ---------- Enlarged spectrum ---------- */
@@ -558,13 +794,11 @@
 
   /* ---------- Wiring ---------- */
   function init() {
-    if (!questions) { show("broken"); return; }
-    setupStart();
-    show("start");
-
     $("btn-start").addEventListener("click", begin);
     $("btn-next").addEventListener("click", next);
     $("btn-again").addEventListener("click", begin);
+    $("btn-round2").addEventListener("click", toRound2);
+    $("signup").addEventListener("submit", signUp);
     $("btn-zoom").addEventListener("click", openZoom);
     $("btn-zoom-close").addEventListener("click", closeZoom);
     $("zoom").addEventListener("click", function (ev) { if (ev.target === $("zoom")) closeZoom(); });
@@ -591,6 +825,16 @@
     });
 
     setInterval(updateClock, 250);
+
+    if (STUDY) {
+      study = loadStudy();
+      if (study) enterRound(false);
+      else showSignup();
+      return;
+    }
+    if (!questions) { show("broken"); return; }
+    setupStart();
+    show("start");
   }
 
   init();

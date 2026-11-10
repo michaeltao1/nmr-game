@@ -22,7 +22,7 @@ window.GAME_CONFIG = {
     B: ["B1-1", "B1-2", "B1-3", "B1-4", "B1-5", "B2-1", "B2-2", "B2-3", "B2-4", "B2-5"]
   },
   resultsUrl: "https://script.google.com/macros/s/AKfycbyQIjdIeH-1ewbYMcjGx4bLyBgRmkH59LC4paS3XtY4JwLUZwtGhlRPtCRAnhpQADyp0g/exec",
-  formUrl: "",
-  formNameField: "",
+  formUrl: "https://docs.google.com/forms/d/e/1FAIpQLSc5SJLvspOnF7U3t_FVmfwzoILozLPgst-Jh5ODZKEgv9vkqw/viewform",
+  formNameField: "entry.451206385",
   infoUrl: ""
 };

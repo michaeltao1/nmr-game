@@ -25,6 +25,48 @@
     if (text != null) e.textContent = text;
     return e;
   }
+  var SVGNS = "http://www.w3.org/2000/svg";
+  function svg(tag, attrs) {
+    var e = document.createElementNS(SVGNS, tag);
+    Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+    return e;
+  }
+  var REDUCED = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+  // Formulas arrive with Unicode subscripts and superscripts (C₇H₁₄O₂, ¹³C). Typeset them as real
+  // <sub> and <sup> so they match the body font instead of falling back to another one.
+  var SCRIPTS = /[₀-₉]+|[¹²³⁰⁴-⁹]+/g;
+  function digit(c) {
+    var n = c.charCodeAt(0);
+    if (n >= 0x2080) return String(n - 0x2080);
+    return { "¹": "1", "²": "2", "³": "3" }[c] || String(n - 0x2070);
+  }
+  function setChem(node, text) {
+    node.textContent = "";
+    var last = 0, m;
+    SCRIPTS.lastIndex = 0;
+    while ((m = SCRIPTS.exec(text))) {
+      if (m.index > last) node.appendChild(document.createTextNode(text.slice(last, m.index)));
+      var low = m[0].charCodeAt(0) >= 0x2080;
+      node.appendChild(el(low ? "sub" : "sup", null, m[0].replace(/./g, digit)));
+      last = SCRIPTS.lastIndex;
+    }
+    if (last < text.length) node.appendChild(document.createTextNode(text.slice(last)));
+    return node;
+  }
+
+  // A Lorentzian line in a 40 x 32 box with its baseline along the bottom: one peak of the ruler.
+  var PEAK = (function () {
+    var d = "M0 32", g = 3.6;
+    for (var i = 0; i <= 48; i++) {
+      var x = i * 40 / 48;
+      d += " L" + x.toFixed(2) + " " + (32 - 30 * g * g / ((x - 20) * (x - 20) + g * g)).toFixed(2);
+    }
+    return d + " L40 32";
+  })();
+  // A benzene-ring hexagon (pointy top) for the answer letters.
+  var HEX = "M17 1.6 L32.2 10.3 L32.2 27.7 L17 36.4 L1.8 27.7 L1.8 10.3 Z";
+
   function sum(a) { return a.reduce(function (s, v) { return s + v; }, 0); }
   function mmss(s) { return Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2); }
   function ordinal(n) {
@@ -96,6 +138,8 @@
     $("round-line").textContent = mode === "L" ? "This round has a leaderboard."
       : mode === "S" ? "This round has no leaderboard."
       : "Practice mode: no leaderboard, and nothing is recorded.";
+    $("round-line").className = "round-line " + (mode === "L" ? "leaderboard" : mode === "S" ? "solo" : "practice");
+    $("btn-start").textContent = timed ? "Start the round" : "Start practice";
     var rules = timed ? [
       "10 questions: two spectra, five steps each, one attempt per question.",
       "10 points per correct answer; the time on each question is recorded.",
@@ -124,18 +168,52 @@
     $("lb-panel").hidden = mode !== "L";
     $("lb-strip").hidden = mode !== "L";
     $("lb-inline").hidden = mode !== "L";
+    buildRuler($("ruler"), questions.length);
+    lastOrder = null;
     show("play");
     renderQuestion();
+  }
+
+  /* ---------- The ruler: one slot per question, five per spectrum; answers grow peaks ---------- */
+  function buildRuler(box, n) {
+    box.textContent = "";
+    for (var g = 0; g < n / 5; g++) {
+      var group = el("div", "rgroup"), slots = el("div", "slots");
+      for (var s = 0; s < 5; s++) {
+        var pic = svg("svg", { viewBox: "0 0 40 32", preserveAspectRatio: "none", focusable: "false" });
+        pic.appendChild(svg("path", { d: PEAK, "class": "pk", "vector-effect": "non-scaling-stroke" }));
+        slots.appendChild(el("span", "slot")).appendChild(pic);
+      }
+      group.appendChild(slots);
+      group.appendChild(el("span", "rlabel", "Spectrum " + (g + 1)));
+      box.appendChild(group);
+    }
+  }
+
+  // Answered slots show a tall (right) or short (wrong) peak; grow = the slot that just changed.
+  function paintRuler(box, current, grow) {
+    Array.prototype.forEach.call(box.querySelectorAll(".slot"), function (slot, i) {
+      var done = i < state.correct.length;
+      slot.className = "slot" + (done ? (state.correct[i] ? " good" : " bad") : "") +
+        (i === current ? " current" : "") + (i === grow ? " grow" : "");
+    });
+    Array.prototype.forEach.call(box.querySelectorAll(".rgroup"), function (g, j) {
+      g.classList.toggle("now", current >= 0 && Math.floor(current / 5) === j);
+    });
   }
 
   /* ---------- Questions ---------- */
   function renderQuestion() {
     var q = questions[state.i], n = questions.length;
-    $("where").textContent = "Spectrum " + (Math.floor(state.i / 5) + 1) + " of " + (n / 5) +
-      " · Step " + (state.i % 5 + 1) + " of 5: " + q.stepName;
-    $("score").textContent = "Score " + state.score;
-    $("caption").textContent = q.caption;
-    $("question").textContent = q.question;
+    // The ruler shows which spectrum; the spectrum is also spelt out for screen readers.
+    var where = $("where");
+    where.textContent = "";
+    where.appendChild(el("span", "vh", "Spectrum " + (Math.floor(state.i / 5) + 1) + " of " + (n / 5) + ", "));
+    where.appendChild(el("span", "of", "Step " + (state.i % 5 + 1) + " of 5: "));
+    where.appendChild(el("span", "name", q.stepName));
+    $("score").textContent = String(state.score);
+    setChem($("caption"), q.caption);
+    setChem($("question"), q.question);
     $("feedback").hidden = true;
 
     var box = $("answers");
@@ -144,13 +222,18 @@
     q.options.forEach(function (opt, k) {
       var b = el("button", "answer");
       b.type = "button";
-      b.appendChild(el("span", "letter", LETTERS[k]));
+      var letter = el("span", "letter");
+      var hex = svg("svg", { viewBox: "0 0 34 38", focusable: "false", "aria-hidden": "true" });
+      hex.appendChild(svg("path", { d: HEX, "class": "hex" }));
+      letter.appendChild(hex);
+      letter.appendChild(el("b", null, LETTERS[k]));
+      b.appendChild(letter);
       var t = el("span", "text");
       if (Array.isArray(opt)) {
-        t.appendChild(el("span", "main", opt[0]));
-        t.appendChild(el("span", "sub", opt[1]));
+        t.appendChild(setChem(el("span", "main"), opt[0]));
+        t.appendChild(setChem(el("span", "sub"), opt[1]));
       } else {
-        t.textContent = opt;
+        setChem(t, opt);
       }
       b.appendChild(t);
       b.addEventListener("click", function () { choose(k, performance.now()); });
@@ -196,14 +279,17 @@
     Array.prototype.forEach.call($("answers").children, function (b, j) {
       b.disabled = true;
       b.classList.add(j === q.correct ? "correct" : j === k ? "wrong" : "faded");
+      if (j === k) b.classList.add("picked");
     });
-    $("verdict").textContent = ok ? "✓ Correct, +10 points" : "✗ Not this time";
+    $("verdict").textContent = ok ? "Correct, +10 points" : "Not this time";
     $("feedback").className = "feedback " + (ok ? "good" : "bad");
-    $("explanation").textContent = q.explanation;
+    setChem($("explanation"), q.explanation);
     $("btn-next").textContent = state.i === questions.length - 1 ? "See my result" : "Next question";
     $("feedback").hidden = false;
-    $("score").textContent = "Score " + state.score;
-    updateProgress();
+    var score = $("score");
+    score.textContent = String(state.score);
+    if (ok) { score.classList.remove("bump"); void score.offsetWidth; score.classList.add("bump"); }
+    paintRuler($("ruler"), -1, state.i);
     updateClock();
     renderBoard();
     $("btn-next").focus({ preventScroll: true });
@@ -223,7 +309,7 @@
   }
 
   function updateProgress() {
-    $("progress-bar").style.width = (100 * state.correct.length / questions.length) + "%";
+    paintRuler($("ruler"), state.i, -1);
   }
 
   function updateClock() {
@@ -236,13 +322,14 @@
   function standings(k) {
     var rows = testers.map(function (p, j) {
       return {
+        key: "t" + j,
         name: NAME_OK.test(p.name || "") ? p.name : "Player " + (j + 1),
         you: false,
         points: POINTS * sum(p.correct.slice(0, k)),
         time: sum(p.seconds.slice(0, k))
       };
     });
-    rows.push({ name: "You", you: true, points: POINTS * sum(state.correct.slice(0, k)),
+    rows.push({ key: "you", name: "You", you: true, points: POINTS * sum(state.correct.slice(0, k)),
                 time: sum(state.seconds.slice(0, k)) });
     // More points first; equal points split by less time; exact ties share a rank, "You" listed first.
     rows.sort(function (a, b) { return b.points - a.points || a.time - b.time || (b.you - a.you); });
@@ -254,9 +341,25 @@
   }
 
   function moveTag(d) {
-    if (d > 0) return el("span", "move up", "▲ up " + d);
-    if (d < 0) return el("span", "move down", "▼ down " + (-d));
+    if (d > 0) return el("span", "move up", "up " + d);
+    if (d < 0) return el("span", "move down", "down " + (-d));
     return el("span", "move same", "No change");
+  }
+
+  // After an answer, each row slides from where it was to its new place, so moves are easy to follow.
+  var lastOrder = null;
+  function slideRows(table, order) {
+    if (!lastOrder || REDUCED) return;
+    var rows = table.querySelectorAll("tbody tr");
+    if (!rows.length || !rows[0].animate) return;
+    var h = rows[0].getBoundingClientRect().height;
+    if (!h) return;
+    Array.prototype.forEach.call(rows, function (tr, j) {
+      var was = lastOrder.indexOf(order[j]);
+      if (was < 0 || was === j) return;
+      tr.animate([{ transform: "translateY(" + ((was - j) * h) + "px)" }, { transform: "none" }],
+                 { duration: 520, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" });
+    });
   }
 
   function boardNote(k) {
@@ -300,26 +403,27 @@
     var k = state.correct.length;
     var rows = standings(k);
     var pos = position(rows, k);
+    var order = rows.map(function (r) { return r.key; });
 
     var panel = $("lb-panel");
     panel.textContent = "";
     panel.appendChild(el("h2", null, "Leaderboard"));
     panel.appendChild(pos.el);
     panel.appendChild(el("p", "lb-note", boardNote(k)));
-    panel.appendChild(boardTable(rows));
+    slideRows(panel.appendChild(boardTable(rows)), order);
 
     var strip = $("lb-strip");
     strip.textContent = "";
     strip.appendChild(el("span", null, "Leaderboard: you are " + ordinal(pos.me.rank) + " of " + rows.length));
-    strip.appendChild(el("span", null, pos.me.points + " points"));
 
     var inline = $("lb-inline");
     inline.textContent = "";
     if (k > 0) {
       inline.appendChild(pos.el.cloneNode(true));
       inline.appendChild(el("p", "lb-note", boardNote(k)));
-      inline.appendChild(boardTable(rows));
+      slideRows(inline.appendChild(boardTable(rows)), order);
     }
+    lastOrder = order;
   }
 
   /* ---------- Result ---------- */
@@ -347,6 +451,13 @@
     $("result-rank").hidden = mode !== "L";
     $("save-block").hidden = !timed;
     $("practice-block").hidden = timed;
+    // The round as a spectrum: peaks rise one after another, tall for right, short for wrong.
+    var box = $("result-ruler");
+    buildRuler(box, n);
+    Array.prototype.forEach.call(box.querySelectorAll(".slot"), function (slot, i) {
+      slot.className = "slot grow " + (state.correct[i] ? "good" : "bad");
+      slot.querySelector(".pk").style.animationDelay = (0.3 + i * 0.09).toFixed(2) + "s";
+    });
     if (timed) {
       $("result-title").textContent = "Round complete";
       var rank = null, players = null;
@@ -418,7 +529,7 @@
   function setSave(status) {
     state.save = status;
     $("save-status").textContent = {
-      saving: "Saving your results…", saved: "✓ Your results are saved",
+      saving: "Saving your results…", saved: "Your results are saved",
       failed: "Your results haven't been saved yet", off: "Your results haven't been saved"
     }[status];
     $("save-status").className = "save-status" + (status === "saved" ? " good" : status === "saving" ? "" : " bad");

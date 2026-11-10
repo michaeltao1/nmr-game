@@ -5,18 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow, noarchive">
   <meta name="referrer" content="no-referrer">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'none'">
+  <meta name="theme-color" content="#edf2f0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'none'">
   <title>NMR practice game</title>
-  <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="style.css?v=60693140">
-  <script src="config.js?v=60693140" defer></script>
-  <script src="items.js?v=60693140" defer></script>
-  <script src="leaderboard.js?v=60693140" defer></script>
-  <script src="game.js?v=60693140" defer></script>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="fonts/plex-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css?v=b1d9ac52">
+  <script src="config.js?v=b1d9ac52" defer></script>
+  <script src="items.js?v=b1d9ac52" defer></script>
+  <script src="leaderboard.js?v=b1d9ac52" defer></script>
+  <script src="game.js?v=b1d9ac52" defer></script>
 </head>
 <body>
   <noscript>
-    <div class="card">
+    <div class="plain">
       <h1>NMR practice game</h1>
       <p class="lead">This game needs JavaScript. Please turn it on, or open the link in another browser.</p>
     </div>
@@ -24,29 +26,63 @@
 
   <main id="app">
     <section id="screen-start" class="screen" hidden>
-      <div class="card start">
+      <div class="start">
+        <figure class="hero chart" aria-hidden="true">
+          <svg class="hero-svg" viewBox="0 0 720 200" focusable="false">
+            <path class="hero-fid" pathLength="1" d="M170.0 39.2 L171.2 43.9 L173.7 57.6 L178.7 91.9 L181.2 106.7 L183.7 117.0 L184.9 120.2 L186.2 122.1 L187.4 122.7 L188.6 122.1 L189.9 120.6 L191.1 118.2 L197.3 103.0 L199.8 98.4 L201.1 96.9 L203.6 95.0 L208.5 93.7 L209.8 93.1 L212.3 90.7 L213.5 88.9 L216.0 83.8 L222.2 68.6 L223.4 66.5 L224.7 65.1 L225.9 64.5 L227.2 64.9 L228.4 66.4 L230.9 72.6 L233.4 82.5 L240.8 118.6 L243.3 126.1 L244.6 128.1 L245.8 128.7 L247.1 128.0 L248.3 125.9 L250.8 118.0 L258.2 80.9 L260.7 70.7 L263.2 64.4 L264.5 62.9 L265.7 62.6 L266.9 63.4 L268.2 65.1 L269.4 67.8 L278.1 94.8 L280.6 100.2 L283.1 103.2 L284.3 103.8 L285.6 103.9 L286.8 103.6 L293.0 99.6 L295.5 98.5 L298.0 98.2 L304.2 98.8 L306.7 98.1 L308.0 97.2 L309.2 96.0 L311.7 92.4 L317.9 79.8 L320.4 75.5 L321.6 74.1 L322.9 73.2 L324.1 73.0 L325.4 73.5 L326.6 74.7 L329.1 79.2 L331.6 85.9 L336.5 101.6 L339.0 108.1 L341.5 112.1 L342.8 113.0 L344.0 113.1 L345.2 112.4 L346.5 111.0 L349.0 106.2 L355.2 89.2 L357.7 83.3 L360.2 79.3 L361.4 78.2 L362.6 77.6 L363.9 77.6 L366.4 79.1 L368.9 82.1 L375.1 90.9 L378.8 94.2 L380.0 94.8 L382.5 95.3 L388.7 95.2 L391.2 95.4 L398.7 98.2 L401.2 98.8 L403.7 98.6 L404.9 98.0 L407.4 96.1 L409.9 93.1 L417.3 82.3 L419.8 80.3 L421.1 79.8 L422.3 79.8 L424.8 81.2 L427.3 84.3 L434.7 97.7 L437.2 101.2 L439.7 103.3 L440.9 103.6 L442.2 103.6 L443.4 103.0 L445.9 100.9 L453.4 90.6 L455.9 87.8 L458.3 86.1 L460.8 85.4 L462.1 85.5 L464.6 86.3 L470.8 89.7 L474.5 91.1 L477.0 91.6 L484.4 92.2 L486.9 92.7 L495.6 96.5 L499.4 97.4 L501.8 97.1 L504.3 96.0 L506.8 94.1 L514.3 86.8 L516.8 85.2 L519.2 84.6 L521.7 85.0 L524.2 86.5 L534.2 96.2 L536.6 97.6 L539.1 98.1 L542.9 97.2 L551.6 91.5 L554.0 90.3 L556.5 89.6 L560.3 89.4 L570.2 90.8 L581.4 91.1 L585.1 91.9 L593.8 95.2 L597.5 95.8 L600.0 95.5 L602.5 94.7 L612.5 88.8 L614.9 88.0 L617.4 87.7 L621.2 88.4 L631.1 93.7 L633.6 94.6 L636.1 95.0 L639.8 94.8 L648.5 92.3 L653.5 91.3 L665.9 91.2 L674.6 90.7 L680.8 91.2 L692.0 94.1"/>
+            <g class="hero-spec">
+              <path class="hero-trace" d="M36.0 162.0 L135.4 161.6 L148.3 161.0 L151.9 160.4 L154.8 159.5 L157.0 157.6 L158.4 154.6 L159.1 151.7 L161.3 136.2 L162.0 138.8 L163.4 148.9 L164.2 151.3 L164.9 152.3 L165.6 152.3 L166.3 151.5 L167.8 146.7 L169.2 133.2 L171.4 89.4 L172.1 99.1 L173.5 131.2 L174.2 139.4 L175.0 144.0 L175.7 146.3 L176.4 147.0 L177.1 146.3 L177.8 144.0 L178.6 139.4 L179.3 131.2 L180.7 99.1 L181.4 89.4 L183.6 133.2 L184.3 141.6 L185.8 149.7 L186.5 151.5 L187.2 152.3 L187.9 152.3 L188.6 151.3 L189.4 148.9 L190.8 138.8 L191.5 136.2 L193.7 151.7 L195.1 156.4 L195.8 157.6 L197.3 159.0 L199.4 160.0 L201.6 160.6 L208.8 161.3 L222.5 161.7 L288.0 161.7 L313.2 161.0 L320.4 160.4 L325.4 159.4 L328.3 158.4 L331.2 156.7 L333.4 154.6 L335.5 151.1 L337.0 147.5 L338.4 142.2 L341.3 127.4 L342.0 124.4 L342.7 122.7 L343.4 122.8 L344.2 124.7 L347.8 142.7 L349.2 147.8 L351.4 152.7 L353.5 155.5 L355.7 157.3 L358.6 158.8 L362.9 159.9 L370.8 160.9 L382.3 161.4 L433.4 161.8 L512.6 161.6 L527.0 161.2 L535.0 160.2 L538.6 159.0 L540.7 157.4 L542.2 155.3 L543.6 151.3 L545.0 141.7 L547.2 105.5 L547.9 107.5 L549.4 132.8 L550.1 140.0 L550.8 143.7 L551.5 145.1 L552.2 144.9 L553.0 143.1 L554.4 132.7 L555.1 121.4 L557.3 51.6 L558.0 59.1 L559.4 111.8 L560.2 127.0 L561.6 141.2 L562.3 144.1 L563.0 145.2 L563.8 144.7 L564.5 142.4 L565.2 137.4 L565.9 128.3 L567.4 104.4 L568.1 109.9 L569.5 136.8 L570.2 144.6 L571.7 152.4 L573.1 155.9 L574.6 157.7 L576.7 159.2 L580.3 160.3 L585.4 161.0 L592.6 161.4 L618.5 161.8 L684.0 162.0"/>
+            </g>
+            <g class="hero-mol">
+              <path class="bond" d="M50 62 L84 42 L113 59"/>
+              <text class="atom e3" x="116" y="67">OH</text>
+              <circle class="env e1" cx="50" cy="62" r="5.5"/>
+              <circle class="env e2" cx="84" cy="42" r="5.5"/>
+            </g>
+            <g class="hero-dots">
+              <circle class="env e2" cx="176.4" cy="77" r="5.5"/>
+              <circle class="env e3" cx="343" cy="110" r="5.5"/>
+              <circle class="env e1" cx="557.5" cy="37.5" r="5.5"/>
+            </g>
+            <g class="hero-axis">
+              <line x1="36" y1="162" x2="684" y2="162"/>
+              <line x1="128.6" y1="162" x2="128.6" y2="169"/>
+              <text x="128.6" y="186">4</text>
+              <line x1="282.9" y1="162" x2="282.9" y2="169"/>
+              <text x="282.9" y="186">3</text>
+              <line x1="437.1" y1="162" x2="437.1" y2="169"/>
+              <text x="437.1" y="186">2</text>
+              <line x1="591.4" y1="162" x2="591.4" y2="169"/>
+              <text x="591.4" y="186">1</text>
+              <text class="unit" x="684" y="186">ppm</text>
+            </g>
+          </svg>
+        </figure>
         <p id="demo-banner" class="banner" hidden>Test version: the leaderboard shows demo players until the pilot results are loaded.</p>
-        <h1>NMR practice game</h1>
-        <p id="round-line" class="lead"></p>
+        <h1 class="title">NMR practice game</h1>
+        <p id="round-line" class="round-line"></p>
         <ul id="rules" class="rules"></ul>
-        <button id="btn-start" class="btn primary big" type="button">Start</button>
+        <button id="btn-start" class="btn primary big" type="button">Start the round</button>
       </div>
     </section>
 
     <section id="screen-play" class="screen" hidden>
       <header class="topbar">
-        <div id="lb-strip" class="lb-strip" hidden></div>
-        <div class="topline">
-          <p id="where" class="where"></p>
-          <p class="stats"><span id="score">Score 0</span><span id="clock" class="clock" aria-label="Time">0:00</span></p>
+        <div class="topbar-in">
+          <div id="lb-strip" class="lb-strip" hidden></div>
+          <div class="topline">
+            <p id="where" class="where"></p>
+            <p class="stats"><span class="score"><span id="score">0</span> points</span><span id="clock" class="clock" aria-label="Time">0:00</span></p>
+          </div>
+          <div id="ruler" class="ruler" aria-hidden="true"></div>
         </div>
-        <div class="progress" aria-hidden="true"><div id="progress-bar" class="bar"></div></div>
       </header>
       <div id="layout" class="layout">
         <div class="qcol">
           <figure class="spectrum">
             <button id="btn-zoom" class="zoom-btn" type="button" title="Enlarge spectrum">
               <img id="spectrum-img" alt="" width="1408" height="946">
+              <span class="enlarge" aria-hidden="true">Enlarge</span>
             </button>
             <figcaption id="caption"></figcaption>
           </figure>
@@ -64,8 +100,12 @@
     </section>
 
     <section id="screen-result" class="screen" hidden>
-      <div class="card result">
-        <h1 id="result-title">Round complete</h1>
+      <div class="result">
+        <figure class="round-spectrum chart" aria-hidden="true">
+          <div id="result-ruler" class="ruler big"></div>
+          <figcaption class="legend">Each peak is one question: tall for a right answer, short for a wrong one.</figcaption>
+        </figure>
+        <h1 id="result-title" class="title">Round complete</h1>
         <p class="big-score"><span id="result-score">0</span><span id="result-max" class="max"> / 100</span></p>
         <p id="result-line" class="lead"></p>
         <p id="result-rank" class="lead rank" hidden></p>
@@ -91,7 +131,10 @@
     </section>
 
     <section id="screen-broken" class="screen" hidden>
-      <div class="card">
+      <div class="plain">
+        <svg class="flatline" viewBox="0 0 320 60" aria-hidden="true" focusable="false">
+          <path d="M8 40 H120 l4 -2 l3 3 l4 -1 l3 1 H312"/>
+        </svg>
         <h1>This link is incomplete</h1>
         <p class="lead">Please go back to the questionnaire and open the game from the link there.</p>
       </div>

@@ -9,6 +9,9 @@
    can be matched. The session is kept in this tab only (sessionStorage), so a refresh carries on
    where it stopped.
 
+   Each round sent also carries, for every question, the option picked, the seconds spent reading
+   its explanation, the seconds the tab was hidden, and (leaderboard rounds) the position after it.
+
    A link with a set and mode (?set=A&mode=L) plays one round on its own, for testing, and stores
    nothing; ?mode=P is practice, which is never sent. The game resends a round until the sheet
    replies "ok", and the sheet keeps a resent round only once. */
@@ -21,6 +24,8 @@
 
   var POINTS = 10;          // per correct answer
   var CAP = 99;             // seconds per question, so each time fits two digits
+  var READ_CAP = 999;       // seconds counted on one explanation
+  var AWAY_CAP = 999;       // seconds counted away from the tab on one question
   var FALLBACK_MS = 4000;   // start the clock anyway if a spectrum is slow to load
   var LETTERS = ["A", "B", "C", "D"];
   var NUMBERS = ["zero", "one", "two", "three", "four"];
@@ -148,9 +153,17 @@
   var NAME_OK = /^[A-Za-z0-9 '_-]{1,12}$/;
 
   /* ---------- The study session, kept in this tab so a refresh carries on where it stopped ---------- */
-  var study = null;   // { name, sid, src, group, round, progress: { roundId, correct, seconds } }
+  // progress: { roundId, correct, seconds, choices, reading, away }, one entry per question answered
+  var study = null;   // { name, sid, src, group, round, progress }
 
   function cleanName(v) { return String(v == null ? "" : v).replace(/\s+/g, " ").trim(); }
+
+  // Whole numbers from 0 to max, or null where a value wasn't caught (a refresh mid-explanation).
+  // Sessions saved before these lists existed have none, which is fine.
+  function optList(a, n, max) {
+    return a == null || (Array.isArray(a) && a.length <= n &&
+      a.every(function (v) { return v === null || (v === Math.floor(v) && v >= 0 && v <= max); }));
+  }
 
   function validStudy(s) {
     if (!s || typeof s !== "object") return false;
@@ -161,7 +174,16 @@
     return /^[A-Za-z0-9-]{8,64}$/.test(p.roundId || "") && Array.isArray(p.correct) && Array.isArray(p.seconds) &&
       p.correct.length === p.seconds.length && p.correct.length <= 10 &&
       p.correct.every(function (v) { return v === 0 || v === 1; }) &&
-      p.seconds.every(function (v) { return v === Math.floor(v) && v >= 0 && v <= CAP; });
+      p.seconds.every(function (v) { return v === Math.floor(v) && v >= 0 && v <= CAP; }) &&
+      optList(p.choices, p.correct.length, 3) && optList(p.reading, p.correct.length, READ_CAP) &&
+      optList(p.away, p.correct.length, AWAY_CAP);
+  }
+
+  // The list cut or padded with null to n entries.
+  function padTo(a, n) {
+    var out = (Array.isArray(a) ? a : []).slice(0, n);
+    while (out.length < n) out.push(null);
+    return out;
   }
 
   function loadStudy() {
@@ -200,9 +222,32 @@
   function freshState() {
     return {
       i: 0, score: 0, correct: [], seconds: [], ranks: [],
+      // Per question: the option picked (0 to 3), seconds on its explanation, and seconds the
+      // tab was hidden from the question appearing until moving on.
+      choices: [], reading: [], away: [],
       waiting: false, running: false, t0: 0,
+      shownAt: 0,         // when the current explanation appeared
+      awayMs: 0,          // hidden time so far on the current question
+      awayAtShown: 0,     // awayMs when its explanation appeared
+      hiddenAt: 0,        // when the tab was hidden, while it is
       guard: false        // ask before closing the tab
     };
+  }
+
+  // Hidden time on the current question, counting a hide that is still going on.
+  function awayNow() {
+    return state.awayMs + (state.hiddenAt ? performance.now() - state.hiddenAt : 0);
+  }
+
+  function keepAnswers() {
+    if (!STUDY) return;
+    var p = study.progress;
+    p.correct = state.correct.slice();
+    p.seconds = state.seconds.slice();
+    p.choices = state.choices.slice();
+    p.reading = state.reading.slice();
+    p.away = state.away.slice();
+    keepStudy();
   }
 
   function show(name) {
@@ -362,6 +407,9 @@
     state.seconds = p.seconds.slice();
     state.score = POINTS * sum(state.correct);
     state.i = state.correct.length;
+    state.choices = padTo(p.choices, state.i);
+    state.reading = padTo(p.reading, state.i);
+    state.away = padTo(p.away, state.i);
     if (mode === "L") {
       for (var k = 0; k <= state.i; k++) state.ranks[k] = standings(k).filter(function (r) { return r.you; })[0].rank;
     }
@@ -448,6 +496,10 @@
       box.appendChild(b);
     });
 
+    // Time away from the tab is counted from here until the student moves on.
+    state.awayMs = 0;
+    state.hiddenAt = document.visibilityState === "hidden" ? performance.now() : 0;
+
     // The clock starts when this spectrum has loaded, or after 4 seconds if it is slow.
     state.waiting = true;
     state.running = false;
@@ -482,12 +534,13 @@
     var ok = k === q.correct;
     state.correct.push(ok ? 1 : 0);
     state.seconds.push(secs);
+    state.choices.push(k);
+    state.reading.push(null);        // filled in when they move on from the explanation
+    state.awayAtShown = awayNow();
+    state.away.push(Math.min(AWAY_CAP, Math.round(state.awayAtShown / 1000)));
+    state.shownAt = t;
     if (ok) state.score += POINTS;
-    if (STUDY) {
-      study.progress.correct = state.correct.slice();
-      study.progress.seconds = state.seconds.slice();
-      keepStudy();
-    }
+    keepAnswers();
 
     Array.prototype.forEach.call($("answers").children, function (b, j) {
       b.disabled = true;
@@ -511,6 +564,11 @@
 
   function next() {
     if ($("screen-play").hidden || $("feedback").hidden) return;
+    // Seconds spent on the explanation (not counting time away), and all time away on this question.
+    var now = performance.now(), gone = awayNow();
+    state.reading[state.i] = Math.min(READ_CAP, Math.max(0, Math.round((now - state.shownAt - (gone - state.awayAtShown)) / 1000)));
+    state.away[state.i] = Math.min(AWAY_CAP, Math.round(gone / 1000));
+    keepAnswers();
     $("feedback").hidden = true;
     if (state.i < questions.length - 1) {
       state.i += 1;
@@ -695,11 +753,19 @@
 
   function sendResults(rank, players) {
     if (!sheetUrl) { setSave("off"); return; }
+    var n = questions.length, positions = null;
+    if (mode === "L") {
+      // The leaderboard position after each question, as the student saw it.
+      positions = [];
+      for (var k = 1; k <= n; k++) positions.push(standings(k).filter(function (r) { return r.you; })[0].rank);
+    }
     var rec = {
       v: 1, roundId: state.roundId || roundId(), pid: STUDY ? "" : pid, src: STUDY ? study.src : src,
       set: set, mode: mode, code: makeCode(), correct: state.correct, seconds: state.seconds,
       items: questions.map(function (q) { return q.id; }),
-      rank: rank, players: players, layout: state.layout
+      rank: rank, players: players, layout: state.layout,
+      choices: padTo(state.choices, n), reading: padTo(state.reading, n), away: padTo(state.away, n),
+      positions: positions
     };
     if (STUDY) {
       rec.name = study.name;
@@ -822,6 +888,18 @@
 
     window.addEventListener("beforeunload", function (ev) {
       if (state && state.guard) { ev.preventDefault(); ev.returnValue = ""; }
+    });
+
+    // Time away from the tab while a question or its explanation is on screen.
+    document.addEventListener("visibilitychange", function () {
+      if (!state || $("screen-play").hidden) return;
+      var now = performance.now();
+      if (document.visibilityState === "hidden") {
+        if (!state.hiddenAt) state.hiddenAt = now;
+      } else if (state.hiddenAt) {
+        state.awayMs += now - state.hiddenAt;
+        state.hiddenAt = 0;
+      }
     });
 
     setInterval(updateClock, 250);

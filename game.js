@@ -416,8 +416,22 @@
     keepStudy();
   }
 
+  // Every structure drawing in the round loads at the start, so step 5 doesn't wait for them.
+  var preloaded = [];
+  function preloadStructures() {
+    preloaded = [];
+    questions.forEach(function (q) {
+      (q.structures || []).forEach(function (src) {
+        var pic = new Image();
+        pic.src = src;
+        preloaded.push(pic);
+      });
+    });
+  }
+
   function begin() {
     roundState();
+    preloadStructures();
     state.guard = timed;
     $("layout").classList.toggle("with-board", mode === "L");
     $("lb-panel").hidden = mode !== "L";
@@ -472,11 +486,32 @@
     setChem($("question"), q.question);
     $("feedback").hidden = true;
 
+    // The clock starts when the spectrum and any structure drawings have loaded, or after 4 seconds
+    // if they are slow.
+    state.waiting = true;
+    state.running = false;
+    var mine = ++token;
+    var img = $("spectrum-img"), waiting = [img];
+    function ready(pic) {
+      var at = waiting.indexOf(pic);
+      if (mine !== token || at < 0) return;
+      waiting.splice(at, 1);
+      if (!waiting.length) startClock();
+    }
+
     var box = $("answers");
     box.textContent = "";
     box.classList.add("waiting");
+    // Step 5 offers structures: PubChem's drawings, each named once the question is answered (the
+    // explanation refers to them by name). If a drawing can't load, its name and formula show instead.
+    var mols = q.structures && q.structures.length === q.options.length ? q.structures : null;
+    box.classList.toggle("structures", !!mols);
+    // Upright drawings (PubChem draws most ring compounds that way) go four to a row, wide ones two.
+    box.classList.toggle("tall", !!mols && q.structureSize[0] < 1.2 * q.structureSize[1]);
+    box.classList.remove("named");
+    $("mol-credit").hidden = !mols;
     q.options.forEach(function (opt, k) {
-      var b = el("button", "answer");
+      var b = el("button", mols ? "answer structure" : "answer");
       b.type = "button";
       var letter = el("span", "letter");
       var hex = svg("svg", { viewBox: "0 0 34 38", focusable: "false", "aria-hidden": "true" });
@@ -484,14 +519,33 @@
       letter.appendChild(hex);
       letter.appendChild(el("b", null, LETTERS[k]));
       b.appendChild(letter);
-      var t = el("span", "text");
-      if (Array.isArray(opt)) {
-        t.appendChild(setChem(el("span", "main"), opt[0]));
-        t.appendChild(setChem(el("span", "sub"), opt[1]));
+      if (mols) {
+        var name = Array.isArray(opt) ? opt[0] : opt;
+        var fig = el("span", "mol-box");
+        var pic = el("img", "mol");
+        pic.alt = name;
+        pic.width = q.structureSize[0];
+        pic.height = q.structureSize[1];
+        pic.decoding = "async";
+        waiting.push(pic);
+        pic.onload = function () { ready(pic); };
+        pic.onerror = function () { b.classList.add("no-pic"); ready(pic); };
+        pic.src = mols[k];
+        fig.appendChild(pic);
+        fig.appendChild(setChem(el("span", "mol-name"), name));
+        if (Array.isArray(opt)) fig.appendChild(setChem(el("span", "mol-sub"), opt[1]));
+        b.appendChild(fig);
       } else {
-        setChem(t, opt);
+        var t = el("span", "text");
+        if (Array.isArray(opt)) {
+          t.appendChild(setChem(el("span", "main"), opt[0]));
+          t.appendChild(setChem(el("span", "sub"), opt[1]));
+        } else {
+          // One span, so a subscript stays in its line (.text stacks its children for two-line options).
+          t.appendChild(setChem(el("span", "main"), opt));
+        }
+        b.appendChild(t);
       }
-      b.appendChild(t);
       b.addEventListener("click", function () { choose(k, performance.now()); });
       box.appendChild(b);
     });
@@ -500,17 +554,12 @@
     state.awayMs = 0;
     state.hiddenAt = document.visibilityState === "hidden" ? performance.now() : 0;
 
-    // The clock starts when this spectrum has loaded, or after 4 seconds if it is slow.
-    state.waiting = true;
-    state.running = false;
-    var mine = ++token;
-    var img = $("spectrum-img");
-    img.onload = img.onerror = function () { if (mine === token) startClock(); };
+    img.onload = img.onerror = function () { ready(img); };
     img.alt = q.alt;
     img.src = q.image;
     clearTimeout(fallbackTimer);
     fallbackTimer = setTimeout(function () { if (mine === token) startClock(); }, FALLBACK_MS);
-    if (img.complete && img.naturalWidth) startClock();
+    waiting.slice().forEach(function (pic) { if (pic.complete && pic.naturalWidth) ready(pic); });
 
     updateProgress();
     updateClock();
@@ -547,6 +596,7 @@
       b.classList.add(j === q.correct ? "correct" : j === k ? "wrong" : "faded");
       if (j === k) b.classList.add("picked");
     });
+    $("answers").classList.add("named");     // structures get their names once answered
     $("verdict").textContent = ok ? "Correct, +10 points" : "Not this time";
     $("feedback").className = "feedback " + (ok ? "good" : "bad");
     setChem($("explanation"), q.explanation);

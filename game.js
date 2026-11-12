@@ -206,6 +206,46 @@
     return Math.floor(Math.random() * n);
   }
 
+  // 0 to n-1 in a random order (Fisher-Yates).
+  function shuffled(n) {
+    var a = [];
+    for (var i = 0; i < n; i++) a.push(i);
+    for (var j = n - 1; j > 0; j--) {
+      var r = randomInt(j + 1), t = a[j];
+      a[j] = a[r];
+      a[r] = t;
+    }
+    return a;
+  }
+
+  // Each question's options in a fresh random order, so the right answer's letter changes from
+  // play to play and can't be learnt. order[k] is the option shown as LETTERS[k].
+  function newOrders() {
+    return questions.map(function (q) { return shuffled(q.options.length); });
+  }
+
+  function validOrders(o) {
+    return Array.isArray(o) && o.length === questions.length && o.every(function (order, i) {
+      return Array.isArray(order) && order.length === questions[i].options.length &&
+        order.slice().sort(function (a, b) { return a - b; }).every(function (v, k) { return v === k; });
+    });
+  }
+
+  // Game names signed up with on this device before (oldest first), so a second play can be
+  // flagged in the results. Kept in the browser; nothing else about the student is stored.
+  var PLAYS = "nmr-game-plays";
+  function earlierPlays() {
+    try {
+      var a = JSON.parse(window.localStorage.getItem(PLAYS) || "[]");
+      return Array.isArray(a) ? a.filter(function (n) { return typeof n === "string" && NAME_RULE.test(n); }).slice(-20) : [];
+    } catch (e) { return []; }
+  }
+
+  function notePlay(name) {
+    try { window.localStorage.setItem(PLAYS, JSON.stringify(earlierPlays().concat([name]).slice(-20))); }
+    catch (e) { /* no storage: a second play on this device can't be flagged */ }
+  }
+
   // A session ID for one sign-up: a letter, then nine letters or digits (no look-alikes).
   function newSid() {
     var letters = "ABCDEFGHJKMNPQRSTUVWXYZ", all = letters + "23456789";
@@ -222,9 +262,11 @@
   function freshState() {
     return {
       i: 0, score: 0, correct: [], seconds: [], ranks: [],
-      // Per question: the option picked (0 to 3), seconds on its explanation, and seconds the
-      // tab was hidden from the question appearing until moving on.
+      // Per question: the option picked (0 to 3, as lettered on the answer sheet, whatever letter
+      // it had on screen), seconds on its explanation, and seconds the tab was hidden from the
+      // question appearing until moving on.
       choices: [], reading: [], away: [],
+      orders: [],         // each question's options in the order shown (see newOrders)
       waiting: false, running: false, t0: 0,
       shownAt: 0,         // when the current explanation appeared
       awayMs: 0,          // hidden time so far on the current question
@@ -288,14 +330,17 @@
     signing = true;
     $("btn-signup").disabled = true;
     $("btn-signup").textContent = "Setting up your rounds…";
-    var sid = newSid();
-    askForOrder(name, sid, function (reply) {
+    var sid = newSid(), earlier = earlierPlays();
+    var before = { before: earlier[0] || "", plays: earlier.length };   // flags a second play on this device
+    askForOrder(name, sid, before, function (reply) {
       signing = false;
       $("btn-signup").disabled = false;
       $("btn-signup").textContent = "Continue";
       if (reply === "taken") return signupError("Someone has already picked that name. Please choose another one.", input);
       if (reply === "name") return signupError(nameRule, input);
-      study = { name: name, sid: sid, src: src, group: reply, round: 1, progress: null };
+      study = { name: name, sid: sid, src: src, group: reply, round: 1, progress: null,
+                before: before.before, plays: before.plays };
+      notePlay(name);
       keepStudy();
       enterRound(true);
     });
@@ -303,7 +348,7 @@
 
   // The results sheet deals the order, so the four groups stay the same size, and checks that no
   // one else has the name. If it can't be reached, the game picks one of the four orders at random.
-  function askForOrder(name, sid, done) {
+  function askForOrder(name, sid, before, done) {
     var answered = false, timer = null;
     function reply(r) {
       if (answered) return;
@@ -316,7 +361,8 @@
     timer = setTimeout(random, SIGNUP_TIMEOUT_MS);
     try {
       fetch(sheetUrl, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-                        body: JSON.stringify({ v: 1, type: "signup", name: name, sid: sid, src: src }) })
+                        body: JSON.stringify({ v: 1, type: "signup", name: name, sid: sid, src: src,
+                                               before: before.before, plays: before.plays }) })
         .then(function (res) { return res.text(); })
         .then(function (text) {
           var d = null;
@@ -399,9 +445,14 @@
   function roundState() {
     state = freshState();
     state.layout = window.matchMedia("(max-width: 899px)").matches ? "phone" : "laptop";
-    if (!STUDY) return;
+    if (!STUDY) {
+      state.orders = newOrders();
+      return;
+    }
     if (!study.progress) study.progress = { roundId: roundId(), correct: [], seconds: [] };
     var p = study.progress;
+    if (!validOrders(p.orders)) p.orders = newOrders();   // kept with the round, so a refresh shows the same order
+    state.orders = p.orders;
     state.roundId = p.roundId;
     state.correct = p.correct.slice();
     state.seconds = p.seconds.slice();
@@ -510,14 +561,18 @@
     box.classList.toggle("tall", !!mols && q.structureSize[0] < 1.2 * q.structureSize[1]);
     box.classList.remove("named");
     $("mol-credit").hidden = !mols;
-    q.options.forEach(function (opt, k) {
+    // The options in this play's shuffled order: k is the option (its letter on the answer sheet),
+    // shownAs the letter it gets on screen.
+    state.orders[state.i].forEach(function (k, shownAs) {
+      var opt = q.options[k];
       var b = el("button", mols ? "answer structure" : "answer");
       b.type = "button";
+      b.setAttribute("data-option", k);
       var letter = el("span", "letter");
       var hex = svg("svg", { viewBox: "0 0 34 38", focusable: "false", "aria-hidden": "true" });
       hex.appendChild(svg("path", { d: HEX, "class": "hex" }));
       letter.appendChild(hex);
-      letter.appendChild(el("b", null, LETTERS[k]));
+      letter.appendChild(el("b", null, LETTERS[shownAs]));
       b.appendChild(letter);
       if (mols) {
         var name = Array.isArray(opt) ? opt[0] : opt;
@@ -591,7 +646,8 @@
     if (ok) state.score += POINTS;
     keepAnswers();
 
-    Array.prototype.forEach.call($("answers").children, function (b, j) {
+    Array.prototype.forEach.call($("answers").children, function (b) {
+      var j = Number(b.getAttribute("data-option"));
       b.disabled = true;
       b.classList.add(j === q.correct ? "correct" : j === k ? "wrong" : "faded");
       if (j === k) b.classList.add("picked");
@@ -815,13 +871,17 @@
       items: questions.map(function (q) { return q.id; }),
       rank: rank, players: players, layout: state.layout,
       choices: padTo(state.choices, n), reading: padTo(state.reading, n), away: padTo(state.away, n),
-      positions: positions
+      positions: positions,
+      // Each question's options in the order shown, as answer-sheet letters: "CADB" = C shown as A.
+      orders: state.orders.map(function (o) { return o.map(function (k) { return LETTERS[k]; }).join(""); })
     };
     if (STUDY) {
       rec.name = study.name;
       rec.sid = study.sid;
       rec.round = study.round;
       rec.group = study.group;
+      rec.before = study.before || "";
+      rec.plays = study.plays || 0;
     }
     state.record = JSON.stringify(rec);
     startSaving();
@@ -932,7 +992,12 @@
       var key = ev.key || "";
       var k = key.length === 1 ? "1234".indexOf(key) : -1;
       if (k < 0 && key.length === 1) k = "abcd".indexOf(key.toLowerCase());
-      if (k >= 0) { ev.preventDefault(); choose(k, performance.now()); return; }
+      if (k >= 0) {      // keys go by the letters on screen
+        ev.preventDefault();
+        var order = state && state.orders[state.i];
+        if (order && k < order.length) choose(order[k], performance.now());
+        return;
+      }
       if (key === "Enter" && !$("feedback").hidden) { ev.preventDefault(); next(); }
     });
 

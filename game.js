@@ -68,6 +68,75 @@
     return node;
   }
 
+  // Formulas in proper notation (MathML, which browsers draw themselves): the J working under a
+  // coupling question's explanation. Each line is a list of tokens: ["i", "J"] an italic letter,
+  // ["s", "ν", "1"] a letter with a subscript, ["o", "="] an operator, ["n", "16.4"] a number,
+  // ["t", "Hz"] upright text. A line starting with "=" carries on from the one above.
+  var MATHML = "http://www.w3.org/1998/Math/MathML";
+  function mathEl(tag, text) {
+    var e = document.createElementNS(MATHML, tag);
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  function fence(c) {             // a bracket hugs what it encloses
+    var f = mathEl("mo", c);
+    f.setAttribute("lspace", "0");
+    f.setAttribute("rspace", "0");
+    f.setAttribute("stretchy", "false");
+    return f;
+  }
+
+  // A number keeps its unit on the same line (no "22.5" at the end of one line and "ppm" on the next).
+  function keepUnits(text) {
+    return text.replace(/(\d) (ppm|Hz|MHz)\b/g, "$1 $2");
+  }
+
+  function formulaLine(tokens) {
+    var m = mathEl("math"), into = [m];          // brackets open a group, so they're spaced as fences
+    tokens.forEach(function (t) {
+      var at = into[into.length - 1];
+      if (t[0] === "o" && t[1] === "(") {
+        var group = mathEl("mrow");
+        at.appendChild(group);
+        group.appendChild(fence("("));
+        into.push(group);
+      } else if (t[0] === "o" && t[1] === ")" && into.length > 1) {
+        at.appendChild(fence(")"));
+        into.pop();
+      } else if (t[0] === "s") {
+        var s = mathEl("msub");
+        s.appendChild(mathEl("mi", t[1]));
+        s.appendChild(mathEl("mn", t[2]));
+        at.appendChild(s);
+      } else {
+        var tag = { i: "mi", o: "mo", n: "mn" }[t[0]] || "mtext";
+        at.appendChild(mathEl(tag, tag === "mtext" ? " " + t[1] : t[1]));   // a thin space before units
+      }
+    });
+    return m;
+  }
+
+  function showFormula(f) {
+    var box = $("formula");
+    box.textContent = "";
+    box.hidden = !f;
+    if (!f) return;
+    f.lines.forEach(function (line, n) {
+      var p = el("p", line[0][1] === "=" ? "formula-line carry" : n ? "formula-line gap" : "formula-line");
+      p.appendChild(formulaLine(line));
+      box.appendChild(p);
+    });
+    if (!f.note) return;
+    // The note's symbols (like ν₀) are drawn as maths too, so they match the formula.
+    var note = el("p", "formula-note");
+    f.note.split(/(ν₀|ν₁|ν₂|δ₁|δ₂)/).forEach(function (bit, k) {
+      if (k % 2) note.appendChild(formulaLine([["s", bit.charAt(0), digit(bit.charAt(1))]]));
+      else if (bit) note.appendChild(setChem(el("span"), keepUnits(bit)));
+    });
+    box.appendChild(note);
+  }
+
   // A Lorentzian line in a 40 x 32 box with its baseline along the bottom: one peak of the ruler.
   var PEAK = (function () {
     var d = "M0 32", g = 3.6;
@@ -655,7 +724,8 @@
     $("answers").classList.add("named");     // structures get their names once answered
     $("verdict").textContent = ok ? "Correct, +10 points" : "Not this time";
     $("feedback").className = "feedback " + (ok ? "good" : "bad");
-    setChem($("explanation"), q.explanation);
+    setChem($("explanation"), keepUnits(q.explanation));
+    showFormula(q.formula);
     $("btn-next").textContent = state.i === questions.length - 1 ? "See my result" : "Next question";
     $("feedback").hidden = false;
     var score = $("score");

@@ -429,6 +429,13 @@ figcaption { font-size: 0.88rem; color: var(--ink-2); margin-top: 8px; }
 }
 .explanation { line-height: 1.62; margin: 8px 0 16px; }
 
+/* The J working under a coupling question's explanation, in proper notation (MathML). */
+.formula { margin: -6px 0 16px; padding: 10px 14px 12px; background: rgba(15, 30, 60, 0.04); border-radius: 8px; }
+.formula-line { margin: 2px 0; font-size: 1.12rem; line-height: 1.5; }
+.formula-line.carry { padding-left: 1.05em; }
+.formula-line.gap { margin-top: 12px; }
+.formula-note { margin: 6px 0 0; font-size: 0.85rem; line-height: 1.45; color: var(--ink-2); }
+
 /* ---------- Leaderboard ---------- */
 .lb-panel {
   position: sticky;

@@ -333,6 +333,13 @@ figcaption { font-size: 0.88rem; color: var(--ink-2); margin-top: 8px; }
 
 .question { font-size: 1.32rem; line-height: 1.35; font-weight: 600; margin: 4px 0 16px; }
 
+/* Step 5: what steps 1 to 4 found, listed between the question and the structures. */
+.clues { margin: -4px 0 16px; padding: 10px 16px 12px; background: var(--sheet); border: 1px solid var(--line); border-radius: 12px; }
+.clues-title { margin: 0 0 6px; font-size: 0.86rem; font-weight: 600; color: var(--ink-2); }
+.clue-list { margin: 0; padding-left: 1.5em; }
+.clue-list li { margin: 3px 0; padding-left: 2px; line-height: 1.45; }
+.clue-list li::marker { color: var(--ink-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+
 /* ---------- Answers: letters in benzene hexagons ---------- */
 .answers { display: grid; gap: 10px; }
 .answers.waiting { opacity: 0.5; transition: opacity 0.2s ease 0.25s; }
@@ -640,6 +647,7 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
   .rlabel { font-size: 0.68rem; margin-top: 4px; }
   .lb-strip { padding: 4px 12px; margin-bottom: 6px; font-size: 0.9rem; }
   .question { font-size: 1.15rem; }
+  .formula-line { font-size: 1.04rem; }
   .answer { min-height: 56px; }
   .mol { max-height: 132px; }
   .round-spectrum { padding: 16px 12px 12px; }
@@ -661,4 +669,13 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 }
 @media (pointer: coarse) {
   .zoom-hint { display: block; }
+}
+/* Small phones: the J working's longest line, (6.7305 − 6.6895) ppm × 400 MHz, must still fit */
+@media (max-width: 419px) {
+  .formula { padding: 10px 10px 12px; }
+  .formula-line { font-size: 0.95rem; }
+  .formula-line.carry { padding-left: 0.8em; }
+}
+@media (max-width: 349px) {
+  .formula-line { font-size: 0.86rem; }
 }

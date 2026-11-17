@@ -137,6 +137,14 @@
     box.appendChild(note);
   }
 
+  // Step 5 lists what steps 1 to 4 found, so each structure can be checked against the clues.
+  function showClues(clues) {
+    var list = $("clue-list");
+    list.textContent = "";
+    $("clues").hidden = !(clues && clues.length);
+    (clues || []).forEach(function (c) { list.appendChild(setChem(el("li"), keepUnits(c))); });
+  }
+
   // A Lorentzian line in a 40 x 32 box with its baseline along the bottom: one peak of the ruler.
   var PEAK = (function () {
     var d = "M0 32", g = 3.6;
@@ -602,8 +610,9 @@
     where.appendChild(el("span", "of", "Step " + (state.i % 5 + 1) + " of 5: "));
     where.appendChild(el("span", "name", q.stepName));
     $("score").textContent = String(state.score);
-    setChem($("caption"), q.caption);
-    setChem($("question"), q.question);
+    setChem($("caption"), keepUnits(q.caption));
+    setChem($("question"), keepUnits(q.question));
+    showClues(q.clues);
     $("feedback").hidden = true;
 
     // The clock starts when the spectrum and any structure drawings have loaded, or after 4 seconds
@@ -662,11 +671,11 @@
       } else {
         var t = el("span", "text");
         if (Array.isArray(opt)) {
-          t.appendChild(setChem(el("span", "main"), opt[0]));
-          t.appendChild(setChem(el("span", "sub"), opt[1]));
+          t.appendChild(setChem(el("span", "main"), keepUnits(opt[0])));
+          t.appendChild(setChem(el("span", "sub"), keepUnits(opt[1])));
         } else {
           // One span, so a subscript stays in its line (.text stacks its children for two-line options).
-          t.appendChild(setChem(el("span", "main"), opt));
+          t.appendChild(setChem(el("span", "main"), keepUnits(opt)));
         }
         b.appendChild(t);
       }

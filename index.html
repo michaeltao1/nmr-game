@@ -10,11 +10,11 @@
   <title>NMR practice game</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preload" href="fonts/plex-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="style.css?v=affce245">
-  <script src="config.js?v=affce245" defer></script>
-  <script src="items.js?v=affce245" defer></script>
-  <script src="leaderboard.js?v=affce245" defer></script>
-  <script src="game.js?v=affce245" defer></script>
+  <link rel="stylesheet" href="style.css?v=594d47ab">
+  <script src="config.js?v=594d47ab" defer></script>
+  <script src="items.js?v=594d47ab" defer></script>
+  <script src="leaderboard.js?v=594d47ab" defer></script>
+  <script src="game.js?v=594d47ab" defer></script>
 </head>
 <body>
   <noscript>
@@ -104,6 +104,10 @@
             <figcaption id="caption"></figcaption>
           </figure>
           <h2 id="question" class="question"></h2>
+          <div id="clues" class="clues" hidden>
+            <p class="clues-title">Your clues from steps 1 to 4</p>
+            <ol id="clue-list" class="clue-list"></ol>
+          </div>
           <div id="answers" class="answers" role="group" aria-labelledby="question"></div>
           <p id="mol-credit" class="mol-credit" hidden>Structures drawn by PubChem (US National Library of Medicine).</p>
           <div id="feedback" class="feedback" hidden>

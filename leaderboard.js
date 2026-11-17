@@ -1,9 +1,11 @@
-// Leaderboard players: pilot testers who played both sets solo and agreed to share their scores
-// under a nickname. Each has their result on every question of a set, in config.js order:
-// correct (1 or 0) and seconds (0 to 99).
+// The backup leaderboard. A leaderboard round normally races the ten best scores on its set from
+// the results sheet (the live board); it uses these players only if the sheet can't be reached, or
+// before anyone is on the live board. Each has their result on every question of a set, in
+// config.js order: correct (1 or 0) and seconds (0 to 99).
 //
-// status "demo": the players below are made up, and the leaderboard round shows a yellow banner.
-// After the pilot, build_leaderboard.py replaces this file with the testers' results and status "pilot".
+// status "demo": the players below are made up, and the leaderboard round shows a yellow banner if
+// it has to use them. After the pilot, these can be replaced with pilot testers who agreed to share
+// their scores, with status "pilot".
 window.LEADERBOARD = {
   status: "demo",
   sets: {

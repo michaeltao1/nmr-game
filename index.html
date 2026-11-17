@@ -10,11 +10,11 @@
   <title>NMR practice game</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preload" href="fonts/plex-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="style.css?v=594d47ab">
-  <script src="config.js?v=594d47ab" defer></script>
-  <script src="items.js?v=594d47ab" defer></script>
-  <script src="leaderboard.js?v=594d47ab" defer></script>
-  <script src="game.js?v=594d47ab" defer></script>
+  <link rel="stylesheet" href="style.css?v=ce832993">
+  <script src="config.js?v=ce832993" defer></script>
+  <script src="items.js?v=ce832993" defer></script>
+  <script src="leaderboard.js?v=ce832993" defer></script>
+  <script src="game.js?v=ce832993" defer></script>
 </head>
 <body>
   <noscript>
@@ -65,8 +65,8 @@
           <form id="signup" class="signup" novalidate>
             <label class="field-label" for="name">Choose a game name</label>
             <input id="name" class="field" type="text" name="game-name" maxlength="24" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="go" aria-describedby="name-hint">
-            <p id="name-hint" class="hint">You'll need it for the questionnaire at the end, so pick one you'll remember. It doesn't have to be your real name, and only the researcher sees it.</p>
-            <label class="consent"><input id="consent" type="checkbox"><span>I agree to take part, and for my game name, answers and times to be used in a BSc research project. Taking part is voluntary.</span></label>
+            <p id="name-hint" class="hint">You'll need it for the questionnaire at the end, so pick one you'll remember. Other players will see it on the leaderboard, so it doesn't have to be your real name.</p>
+            <label class="consent"><input id="consent" type="checkbox"><span>I agree to take part, and for my game name, answers and times to be used in a BSc research project. My game name and score can appear on the leaderboard other players see. Taking part is voluntary.</span></label>
             <p id="info-line" class="hint info" hidden><a id="info-link" href="#" target="_blank" rel="noopener">Read the information sheet</a></p>
             <p id="signup-error" class="form-error" role="alert" hidden></p>
             <button id="btn-signup" class="btn primary big" type="submit">Continue</button>

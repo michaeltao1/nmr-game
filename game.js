@@ -12,6 +12,11 @@
    Each round sent also carries, for every question, the option picked, the seconds spent reading
    its explanation, the seconds the tab was hidden, and (leaderboard rounds) the position after it.
 
+   The leaderboard is live: when a leaderboard round starts, the game asks the results sheet for
+   the ten best scores on that set so far and races them question by question. If the sheet can't
+   be reached, it uses the backup list in leaderboard.js. The board is fixed for the round and kept
+   with it, so a refresh races the same players.
+
    A link with a set and mode (?set=A&mode=L) plays one round on its own, for testing, and stores
    nothing; ?mode=P is practice, which is never sent. The game resends a round until the sheet
    replies "ok", and the sheet keeps a resent round only once. */
@@ -197,6 +202,8 @@
   var SHEET = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
   var sheetUrl = SHEET.test(CONFIG.resultsUrl || "") ? CONFIG.resultsUrl : "";
   var SAVE_TIMEOUT_MS = 15000;                // a try with no reply by then counts as failed
+  var BOARD_SIZE = 10;                        // a leaderboard round races the ten best scores so far
+  var BOARD_TIMEOUT_MS = 8000;                // no leaderboard from the sheet by then: use the backup list
   var RETRY_DELAYS_MS = [2000, 5000, 10000];  // waits before the second, third and fourth tries
 
   // The questionnaire: a Google Form that opens after round 2 with the game name filled in.
@@ -218,16 +225,36 @@
     return qs.every(Boolean) ? qs : null;
   }
 
-  var questions, timed, testers;
+  // The players a leaderboard round races: kind "live" (the ten best scores on this set from the
+  // results sheet when the round starts) or "file" (the backup list in leaderboard.js).
+  var questions, timed, testers, board;
   function useRound(s, m) {
     set = s;
     mode = m;
     questions = pickQuestions();
     timed = mode === "L" || mode === "S";
-    testers = (BOARD.sets && BOARD.sets[set]) || [];
+    applyBoard(fileBoard());
+  }
+
+  function fileBoard() { return { kind: "file", players: ((BOARD.sets && BOARD.sets[set]) || []).filter(validPlayer) }; }
+
+  function applyBoard(b) {
+    board = b;
+    testers = b.players;
+  }
+
+  function validPlayer(p) {
+    return !!p && typeof p.name === "string" && NAME_RULE.test(p.name) &&
+      Array.isArray(p.correct) && p.correct.length === 10 && p.correct.every(function (v) { return v === 0 || v === 1; }) &&
+      Array.isArray(p.seconds) && p.seconds.length === 10 &&
+      p.seconds.every(function (v) { return v === Math.floor(v) && v >= 0 && v <= CAP; });
+  }
+
+  function validBoard(b) {
+    return !!b && (b.kind === "live" || b.kind === "file") && Array.isArray(b.players) &&
+      b.players.length <= BOARD_SIZE + 10 && b.players.every(validPlayer);
   }
   useRound(set, mode);
-  var NAME_OK = /^[A-Za-z0-9 '_-]{1,12}$/;
 
   /* ---------- The study session, kept in this tab so a refresh carries on where it stopped ---------- */
   // progress: { roundId, correct, seconds, choices, reading, away }, one entry per question answered
@@ -380,7 +407,7 @@
   function showSignup() {
     $("signup-block").hidden = false;
     $("round-block").hidden = true;
-    $("demo-banner").hidden = BOARD.status === "pilot";
+    $("demo-banner").hidden = true;
     $("info-line").hidden = !infoUrl;
     if (infoUrl) $("info-link").href = infoUrl;
     show("start");
@@ -415,8 +442,9 @@
       $("btn-signup").textContent = "Continue";
       if (reply === "taken") return signupError("Someone has already picked that name. Please choose another one.", input);
       if (reply === "name") return signupError(nameRule, input);
+      // shown: they signed up agreeing that their game name and score appear on the leaderboard.
       study = { name: name, sid: sid, src: src, group: reply, round: 1, progress: null,
-                before: before.before, plays: before.plays };
+                before: before.before, plays: before.plays, shown: true };
       notePlay(name);
       keepStudy();
       enterRound(true);
@@ -513,9 +541,54 @@
     var list = $("rules");
     list.textContent = "";
     rules.forEach(function (r) { list.appendChild(el("li", null, r)); });
-    $("demo-banner").hidden = !(mode === "L" && BOARD.status !== "pilot");
+    $("demo-banner").hidden = true;
+    if (mode === "L" && !(STUDY && study.progress && validBoard(study.progress.board))) loadBoard();
     // Start loading every spectrum now, so each question appears without delay.
     questions.forEach(function (q) { var im = new Image(); im.src = q.image; });
+  }
+
+  /* ---------- The live leaderboard: the ten best scores on this set, from the results sheet ---------- */
+  // Asked for when a leaderboard round's start screen appears, so it's ready by the time the student
+  // presses Start (which waits for it, at most BOARD_TIMEOUT_MS from the request).
+  var boardLoad = null;   // { set, done, live: players or null, waiters }
+  function loadBoard() {
+    var load = { set: set, done: false, live: null, waiters: [] }, timer = null;
+    boardLoad = load;
+    function done(players) {
+      if (load.done) return;
+      load.done = true;
+      clearTimeout(timer);
+      load.live = players && players.length ? players.slice(0, BOARD_SIZE) : null;
+      // The yellow test banner (on the start screen) only if the round will race the demo players.
+      if (boardLoad === load) $("demo-banner").hidden = !!load.live || BOARD.status === "pilot";
+      load.waiters.splice(0).forEach(function (f) { f(); });
+    }
+    if (!sheetUrl) return done(null);
+    timer = setTimeout(function () { done(null); }, BOARD_TIMEOUT_MS);
+    try {
+      var from = STUDY ? study.src : src;
+      fetch(sheetUrl + "?board=" + set + "&src=" + encodeURIComponent(from || ""), { cache: "no-store" })
+        .then(function (res) { return res.text(); })
+        .then(function (text) {
+          var d = null;
+          try { d = JSON.parse(text); } catch (e) { d = null; }
+          done(d && d.ok === true && d.set === load.set && Array.isArray(d.players) &&
+               d.players.every(validPlayer) ? d.players : null);
+        }, function () { done(null); });
+    } catch (e) { done(null); }
+  }
+
+  // The board a new round races: the sheet's, once it has answered with at least one player, or
+  // else the backup list.
+  function loadedBoard() {
+    var load = boardLoad;
+    return load && load.done && load.set === set && load.live ? { kind: "live", players: load.live } : fileBoard();
+  }
+
+  // Still waiting for the sheet's leaderboard for a round that hasn't started yet.
+  function boardPending() {
+    if (mode !== "L" || (STUDY && study.progress && validBoard(study.progress.board))) return false;
+    return !!boardLoad && boardLoad.set === set && !boardLoad.done;
   }
 
   // A fresh round. In the study it picks up any answers already given in this round.
@@ -524,6 +597,7 @@
     state.layout = window.matchMedia("(max-width: 899px)").matches ? "phone" : "laptop";
     if (!STUDY) {
       state.orders = newOrders();
+      if (mode === "L") applyBoard(loadedBoard());
       return;
     }
     if (!study.progress) study.progress = { roundId: roundId(), correct: [], seconds: [] };
@@ -539,6 +613,8 @@
     state.reading = padTo(p.reading, state.i);
     state.away = padTo(p.away, state.i);
     if (mode === "L") {
+      if (!validBoard(p.board)) p.board = loadedBoard();   // kept with the round, so a refresh races the same players
+      applyBoard(p.board);
       for (var k = 0; k <= state.i; k++) state.ranks[k] = standings(k).filter(function (r) { return r.you; })[0].rank;
     }
     keepStudy();
@@ -558,6 +634,15 @@
   }
 
   function begin() {
+    if (boardPending()) {
+      var btn = $("btn-start");
+      if (!btn.disabled) {
+        btn.disabled = true;
+        btn.textContent = "Loading the leaderboard…";
+        boardLoad.waiters.push(function () { btn.disabled = false; begin(); });
+      }
+      return;
+    }
     roundState();
     preloadStructures();
     state.guard = timed;
@@ -779,7 +864,7 @@
     var rows = testers.map(function (p, j) {
       return {
         key: "t" + j,
-        name: NAME_OK.test(p.name || "") ? p.name : "Player " + (j + 1),
+        name: NAME_RULE.test(p.name || "") ? p.name : "Player " + (j + 1),
         you: false,
         points: POINTS * sum(p.correct.slice(0, k)),
         time: sum(p.seconds.slice(0, k))
@@ -821,7 +906,10 @@
   function boardNote(k) {
     if (k === 0) return "Everyone starts on 0 points.";
     return "After question " + k + ". Higher points first; equal points are split by faster time. " +
-      (BOARD.status === "pilot"
+      (board.kind === "live"
+        ? "The other players are the " + (testers.length >= BOARD_SIZE ? BOARD_SIZE + " best" : "best") +
+          " scores on these questions when you started."
+        : BOARD.status === "pilot"
         ? "Other players are Year 2 students who tested the game and agreed to share their scores."
         : "Other players are demo players until the pilot results are loaded.");
   }
@@ -837,7 +925,7 @@
     rows.forEach(function (r) {
       var tr = el("tr", r.you ? "you" : null);
       tr.appendChild(el("td", null, String(r.rank)));
-      tr.appendChild(el("td", null, r.name));
+      tr.appendChild(el("td", "name", r.name));
       tr.appendChild(el("td", "num", String(r.points)));
       tr.appendChild(el("td", "num", mmss(r.time)));
       body.appendChild(tr);
@@ -948,7 +1036,7 @@
       v: 1, roundId: state.roundId || roundId(), pid: STUDY ? "" : pid, src: STUDY ? study.src : src,
       set: set, mode: mode, code: makeCode(), correct: state.correct, seconds: state.seconds,
       items: questions.map(function (q) { return q.id; }),
-      rank: rank, players: players, layout: state.layout,
+      rank: rank, players: players, layout: state.layout, board: mode === "L" ? board.kind : "",
       choices: padTo(state.choices, n), reading: padTo(state.reading, n), away: padTo(state.away, n),
       positions: positions,
       // Each question's options in the order shown, as answer-sheet letters: "CADB" = C shown as A.
@@ -961,6 +1049,7 @@
       rec.group = study.group;
       rec.before = study.before || "";
       rec.plays = study.plays || 0;
+      rec.shown = study.shown ? 1 : 0;
     }
     state.record = JSON.stringify(rec);
     startSaving();

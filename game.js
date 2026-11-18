@@ -161,6 +161,8 @@
   })();
   // A benzene-ring hexagon (pointy top) for the answer letters.
   var HEX = "M17 1.6 L32.2 10.3 L32.2 27.7 L17 36.4 L1.8 27.7 L1.8 10.3 Z";
+  // The arrow on a leaderboard move, pointing up; turned round for a drop.
+  var ARROW = "M6 0.4 L11.8 7 L8 7 L8 13.6 L4 13.6 L4 7 L0.2 7 Z";
 
   function sum(a) { return a.reduce(function (s, v) { return s + v; }, 0); }
   function mmss(s) { return Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2); }
@@ -652,6 +654,7 @@
     $("lb-inline").hidden = mode !== "L";
     buildRuler($("ruler"), questions.length);
     lastOrder = null;
+    lastK = -1;
     show("play");
     if (state.i >= questions.length) finish();
     else renderQuestion();
@@ -881,14 +884,32 @@
     return rows;
   }
 
-  function moveTag(d) {
-    if (d > 0) return el("span", "move up", "up " + d);
-    if (d < 0) return el("span", "move down", "down " + (-d));
-    return el("span", "move same", "No change");
+  function arrow(up, cls) {
+    var pic = svg("svg", { viewBox: "0 0 12 14", "class": cls, focusable: "false", "aria-hidden": "true" });
+    var path = pic.appendChild(svg("path", { d: ARROW }));
+    if (!up) path.setAttribute("transform", "rotate(180 6 7)");
+    return pic;
+  }
+
+  // Places gained (d > 0) or lost since the last question: green with an up arrow, or red with a
+  // down arrow. Fresh means the answer was just given, so the tag plays its animation (style.css).
+  // Short: just the arrow and the number, for the phone strip; the word stays for screen readers.
+  function moveTag(d, fresh, short) {
+    var tag = el("span", "move " + (d > 0 ? "up" : d < 0 ? "down" : "same") + (fresh ? " anim" : ""));
+    if (!d) {
+      tag.textContent = "No change";
+      return tag;
+    }
+    var word = d > 0 ? "Up " : "Down ";
+    tag.appendChild(arrow(d > 0, "arrow"));
+    tag.appendChild(short ? el("span", "vh", word) : document.createTextNode(word));
+    tag.appendChild(document.createTextNode(String(Math.abs(d))));
+    return tag;
   }
 
   // After an answer, each row slides from where it was to its new place, so moves are easy to follow.
   var lastOrder = null;
+  var lastK = -1;          // answers counted when the board was last drawn (-1: not yet this round)
   function slideRows(table, order) {
     if (!lastOrder || REDUCED) return;
     var rows = table.querySelectorAll("tbody tr");
@@ -914,7 +935,9 @@
         : "Other players are demo players until the pilot results are loaded.");
   }
 
-  function boardTable(rows) {
+  // move and fresh: your row flashes green or red, and lets go of an arrow, just after an answer
+  // that moved you.
+  function boardTable(rows, move, fresh) {
     var table = el("table", "lb-table");
     var head = el("tr");
     [["Rank", ""], ["Player", ""], ["Points", "num"], ["Time", "num"]].forEach(function (h) {
@@ -922,9 +945,11 @@
     });
     table.appendChild(el("thead")).appendChild(head);
     var body = table.appendChild(el("tbody"));
+    var flash = fresh && move ? (move > 0 ? " rise" : " fall") : "";
     rows.forEach(function (r) {
-      var tr = el("tr", r.you ? "you" : null);
-      tr.appendChild(el("td", null, String(r.rank)));
+      var tr = el("tr", r.you ? "you" + flash : null);
+      var rank = tr.appendChild(el("td", "rank", String(r.rank)));
+      if (r.you && flash) rank.appendChild(arrow(move > 0, "float"));
       tr.appendChild(el("td", "name", r.name));
       tr.appendChild(el("td", "num", String(r.points)));
       tr.appendChild(el("td", "num", mmss(r.time)));
@@ -933,20 +958,26 @@
     return table;
   }
 
-  function position(rows, k) {
+  // From question 2: after question 1 everyone has only just left the start, all level on 0.
+  function position(rows, k, fresh) {
     var me = rows.filter(function (r) { return r.you; })[0];
     state.ranks[k] = me.rank;
+    var move = k >= 2 ? state.ranks[k - 1] - me.rank : null;
     var p = el("p", "lb-pos");
     p.appendChild(el("strong", null, ordinal(me.rank) + " of " + rows.length));
-    if (k >= 2) p.appendChild(moveTag(state.ranks[k - 1] - me.rank));
-    return { me: me, el: p };
+    if (move !== null) p.appendChild(moveTag(move, fresh));
+    return { me: me, el: p, move: move };
   }
 
   function renderBoard() {
     if (mode !== "L") return;
     var k = state.correct.length;
+    // Fresh: an answer has come in since the board was last drawn. Drawing it again for the next
+    // question (or after a refresh) doesn't replay the animations.
+    var fresh = lastK >= 0 && k > lastK;
+    lastK = k;
     var rows = standings(k);
-    var pos = position(rows, k);
+    var pos = position(rows, k, fresh);
     var order = rows.map(function (r) { return r.key; });
 
     var panel = $("lb-panel");
@@ -954,18 +985,20 @@
     panel.appendChild(el("h2", null, "Leaderboard"));
     panel.appendChild(pos.el);
     panel.appendChild(el("p", "lb-note", boardNote(k)));
-    slideRows(panel.appendChild(boardTable(rows)), order);
+    slideRows(panel.appendChild(boardTable(rows, pos.move, fresh)), order);
 
+    // Phones: the strip at the top shows the move too, as the table is further down the page.
     var strip = $("lb-strip");
     strip.textContent = "";
     strip.appendChild(el("span", null, "Leaderboard: you are " + ordinal(pos.me.rank) + " of " + rows.length));
+    if (pos.move) strip.appendChild(moveTag(pos.move, fresh, true));
 
     var inline = $("lb-inline");
     inline.textContent = "";
     if (k > 0) {
       inline.appendChild(pos.el.cloneNode(true));
       inline.appendChild(el("p", "lb-note", boardNote(k)));
-      slideRows(inline.appendChild(boardTable(rows)), order);
+      slideRows(inline.appendChild(boardTable(rows, pos.move, fresh)), order);
     }
     lastOrder = order;
   }

@@ -455,23 +455,29 @@ figcaption { font-size: 0.88rem; color: var(--ink-2); margin-top: 8px; }
 .lb-panel h2 { font-size: 1.02rem; font-weight: 700; margin-bottom: 2px; }
 .lb-pos { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .lb-pos strong { font-size: 1.7rem; font-weight: 700; font-stretch: 75%; }
+/* A move on the board: green with an up arrow for places gained, red with a down arrow for
+   places lost. Just after the answer (.anim) the tag climbs or drops into place, a ring pulses
+   out from it twice and its arrow nudges the way you went; your row turns the same colour, fading
+   back to its yellow, and lets go of a floating arrow while it slides to its new place. */
 .move {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   font-size: 0.88rem;
   font-weight: 700;
-  padding: 2px 10px;
+  line-height: 1.5;
+  padding: 2px 10px 2px 8px;
   border-radius: 999px;
-  animation: rise-in 0.3s ease-out;
 }
-.move::before { content: ""; border: 5px solid transparent; }
+.move .arrow { width: 0.9em; height: 1.05em; flex: none; fill: currentColor; overflow: visible; }
 .move.up { color: var(--good); background: var(--good-soft); }
-.move.up::before { border-bottom: 7px solid var(--good); border-top-width: 0; }
 .move.down { color: var(--bad); background: var(--bad-soft); }
-.move.down::before { border-top: 7px solid var(--bad); border-bottom-width: 0; }
-.move.same { color: var(--ink-2); background: #eef2f4; font-weight: 600; }
-.move.same::before { display: none; }
+.move.same { color: var(--ink-2); background: #eef2f4; font-weight: 600; padding: 2px 10px; }
+.move.same.anim { animation: rise-in 0.3s ease-out; }
+.move.up.anim { animation: climb-in 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.3) both, ring-good 0.9s ease-out 0.3s 2; }
+.move.down.anim { animation: drop-in 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.3) both, ring-bad 0.9s ease-out 0.3s 2; }
+.move.up.anim .arrow { animation: nudge-up 0.4s ease-in-out 0.5s 3; }
+.move.down.anim .arrow { animation: nudge-down 0.4s ease-in-out 0.5s 3; }
 .lb-note { font-size: 0.8rem; color: var(--ink-2); margin: 6px 0 10px; line-height: 1.4; }
 .lb-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; font-variant-numeric: tabular-nums; }
 .lb-table th {
@@ -485,15 +491,36 @@ figcaption { font-size: 0.88rem; color: var(--ink-2); margin-top: 8px; }
 .lb-table td { padding: 6px; border-bottom: 1px solid #edf1f3; }
 .lb-table td.name { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lb-table .num { text-align: right; }
+/* Your row's highlighter colour, a registered property so a move can fade it from green or red
+   back to yellow (browsers without @property switch colour halfway instead). */
+@property --hl { syntax: "<color>"; inherits: true; initial-value: #ffe16b; }
+.lb-table tr.you { --hl: var(--mark); }
 .lb-table tr.you td {
   font-weight: 700;
-  background: linear-gradient(transparent 14%, var(--mark) 14%, var(--mark) 86%, transparent 86%);
+  background: linear-gradient(transparent 14%, var(--hl) 14%, var(--hl) 86%, transparent 86%);
 }
+.lb-table tr.rise { animation: hl-good 1.6s ease-out; }
+.lb-table tr.fall { animation: hl-bad 1.6s ease-out; }
+.lb-table td.rank { position: relative; }
+.lb-table .float {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 0.95em;
+  height: 1.1em;
+  margin-top: -0.55em;
+  opacity: 0;
+  pointer-events: none;
+}
+.lb-table tr.rise .float { fill: var(--good); animation: float-up 1.3s ease-out 0.15s both; }
+.lb-table tr.fall .float { fill: var(--bad); animation: float-down 1.3s ease-out 0.15s both; }
 
 .lb-strip {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 4px 10px;
   background: var(--mark-soft);
   border: 1px solid var(--mark-line);
   border-radius: 10px;
@@ -502,6 +529,7 @@ figcaption { font-size: 0.88rem; color: var(--ink-2); margin-top: 8px; }
   font-weight: 700;
   font-size: 0.93rem;
 }
+.lb-strip .move { font-size: 0.84rem; gap: 3px; padding: 0 9px 0 7px; }
 .lb-inline { display: none; }
 .lb-inline .lb-pos strong { font-size: 1.2rem; }
 .lb-inline .lb-table { margin-bottom: 16px; }
@@ -594,6 +622,24 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes shake { 20% { transform: translateX(-5px); } 40% { transform: translateX(4px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
+@keyframes climb-in { from { opacity: 0; transform: translateY(12px) scale(0.85); } }
+@keyframes drop-in { from { opacity: 0; transform: translateY(-12px) scale(0.85); } }
+@keyframes ring-good { from { box-shadow: 0 0 0 0 rgba(11, 125, 85, 0.5); } to { box-shadow: 0 0 0 10px rgba(11, 125, 85, 0); } }
+@keyframes ring-bad { from { box-shadow: 0 0 0 0 rgba(194, 40, 63, 0.5); } to { box-shadow: 0 0 0 10px rgba(194, 40, 63, 0); } }
+@keyframes nudge-up { 50% { transform: translateY(-3px); } }
+@keyframes nudge-down { 50% { transform: translateY(3px); } }
+@keyframes float-up {
+  0% { opacity: 0; transform: translateY(6px); }
+  25% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(-18px); }
+}
+@keyframes float-down {
+  0% { opacity: 0; transform: translateY(-6px); }
+  25% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(18px); }
+}
+@keyframes hl-good { 0%, 35% { --hl: #b5e5cd; } 100% { --hl: var(--mark); } }
+@keyframes hl-bad { 0%, 35% { --hl: #f6c2cb; } 100% { --hl: var(--mark); } }
 @keyframes fid {
   0% { stroke-dashoffset: 1; opacity: 1; }
   52% { stroke-dashoffset: 0; opacity: 1; }
@@ -658,6 +704,11 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 }
 @media (min-width: 900px) {
   .lb-strip { display: none !important; }
+}
+/* Small phones: "Leaderboard: you are 11th of 11" and a move still fit on one line */
+@media (max-width: 359px) {
+  .lb-strip { font-size: 0.84rem; padding: 4px 10px; gap: 4px 8px; }
+  .lb-strip .move { font-size: 0.8rem; }
 }
 /* Narrower screens: fewer structures per row, so the atom labels stay a readable size */
 @media (max-width: 759px) {
